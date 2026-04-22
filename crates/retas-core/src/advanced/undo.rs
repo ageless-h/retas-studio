@@ -146,7 +146,7 @@ impl UndoManager {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs_f64()
     }
 }
@@ -174,10 +174,29 @@ impl Command for StrokeCommand {
         self
     }
 
-    fn execute(&mut self, _document: &mut Document) {
+    fn execute(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            if let crate::Layer::Raster(raster) = layer {
+                if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
+                    if self.previous_pixel_data.is_empty() {
+                        self.previous_pixel_data = frame.image_data.clone();
+                    }
+                    if !self.stroke_data.is_empty() {
+                        frame.image_data = self.stroke_data.clone();
+                    }
+                }
+            }
+        }
     }
 
-    fn undo(&mut self, _document: &mut Document) {
+    fn undo(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            if let crate::Layer::Raster(raster) = layer {
+                if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
+                    frame.image_data = self.previous_pixel_data.clone();
+                }
+            }
+        }
     }
 
     fn description(&self) -> &str {
@@ -213,10 +232,38 @@ impl Command for TransformCommand {
         self
     }
 
-    fn execute(&mut self, _document: &mut Document) {
+    fn execute(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            match layer {
+                crate::Layer::Raster(raster) => {
+                    raster.offset = crate::Point::new(self.new_offset.0, self.new_offset.1);
+                }
+                crate::Layer::Camera(camera) => {
+                    camera.position = crate::Point::new(self.new_offset.0, self.new_offset.1);
+                }
+                crate::Layer::Text(text) => {
+                    text.position = crate::Point::new(self.new_offset.0, self.new_offset.1);
+                }
+                _ => {}
+            }
+        }
     }
 
-    fn undo(&mut self, _document: &mut Document) {
+    fn undo(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            match layer {
+                crate::Layer::Raster(raster) => {
+                    raster.offset = crate::Point::new(self.old_offset.0, self.old_offset.1);
+                }
+                crate::Layer::Camera(camera) => {
+                    camera.position = crate::Point::new(self.old_offset.0, self.old_offset.1);
+                }
+                crate::Layer::Text(text) => {
+                    text.position = crate::Point::new(self.old_offset.0, self.old_offset.1);
+                }
+                _ => {}
+            }
+        }
     }
 
     fn description(&self) -> &str {
@@ -399,10 +446,12 @@ impl Command for SelectionCommand {
         self
     }
 
-    fn execute(&mut self, _document: &mut Document) {
+    fn execute(&mut self, document: &mut Document) {
+        document.selection = self.new_selection.clone();
     }
 
-    fn undo(&mut self, _document: &mut Document) {
+    fn undo(&mut self, document: &mut Document) {
+        document.selection = self.old_selection.clone();
     }
 
     fn description(&self) -> &str {
@@ -425,10 +474,33 @@ impl Command for FillCommand {
         self
     }
 
-    fn execute(&mut self, _document: &mut Document) {
+    fn execute(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            if let crate::Layer::Raster(raster) = layer {
+                if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
+                    if self.old_pixel_data.is_empty() {
+                        self.old_pixel_data = frame.image_data.clone();
+                    }
+                    let color = self.fill_color;
+                    for chunk in frame.image_data.chunks_exact_mut(4) {
+                        chunk[0] = color.r;
+                        chunk[1] = color.g;
+                        chunk[2] = color.b;
+                        chunk[3] = color.a;
+                    }
+                }
+            }
+        }
     }
 
-    fn undo(&mut self, _document: &mut Document) {
+    fn undo(&mut self, document: &mut Document) {
+        if let Some(layer) = document.layers.get_mut(&self.layer_id) {
+            if let crate::Layer::Raster(raster) = layer {
+                if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
+                    frame.image_data = self.old_pixel_data.clone();
+                }
+            }
+        }
     }
 
     fn description(&self) -> &str {

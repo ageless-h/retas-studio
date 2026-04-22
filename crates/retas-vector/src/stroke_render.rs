@@ -130,7 +130,7 @@ impl VectorStroke {
 
         let mut result = vec![self.points[0].clone()];
         self.ramer_douglas_peucker(0, self.points.len() - 1, tolerance, &mut result);
-        result.push(self.points.last().unwrap().clone());
+        result.push(self.points.last().expect("simplify checked len >= 3").clone());
         self.points = result;
     }
 
@@ -224,7 +224,7 @@ impl VectorStroke {
         }
         
         if self.closed && self.points.len() >= 2 {
-            let p0 = self.points.last().unwrap();
+            let p0 = self.points.last().expect("len >= 2 guarantees last");
             let p1 = &self.points[0];
             
             let dx = p1.position.x - p0.position.x;
@@ -272,7 +272,7 @@ fn rand_id() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_nanos() as u64
 }
 

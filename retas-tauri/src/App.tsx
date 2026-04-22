@@ -67,11 +67,22 @@ function CanvasPanel(props: IDockviewPanelProps<{ tool?: string; zoom?: number; 
   }
 }
 
-function TimelinePanel(props: IDockviewPanelProps<{ isPlaying?: boolean; onPlayToggle?: () => void }>) {
+function TimelinePanel(props: IDockviewPanelProps<{ isPlaying?: boolean; onPlayToggle?: () => void; currentFrame?: number; totalFrames?: number; fps?: number; onFrameChange?: (frame: number) => void }>) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#161b22" }}>
-      <Timeline isPlaying={props.params.isPlaying || false} onPlayToggle={props.params.onPlayToggle || (() => {})} />
-      <PlaybackController totalFrames={100} fps={24} onFrameChange={(frame) => console.log("Frame:", frame)} />
+      <Timeline 
+        isPlaying={props.params.isPlaying || false} 
+        onPlayToggle={props.params.onPlayToggle || (() => {})}
+        currentFrame={props.params.currentFrame || 1}
+        totalFrames={props.params.totalFrames || 100}
+        onFrameChange={props.params.onFrameChange || (() => {})}
+      />
+      <PlaybackController 
+        totalFrames={props.params.totalFrames || 100} 
+        fps={props.params.fps || 24} 
+        currentFrame={props.params.currentFrame || 1}
+        onFrameChange={props.params.onFrameChange || (() => {})} 
+      />
     </div>
   );
 }
@@ -130,6 +141,9 @@ function App() {
   const [currentTool, setCurrentTool] = useState<Tool>("brush");
   const [zoom, setZoom] = useState(100);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentFrame, setCurrentFrame] = useState(1);
+  const [totalFrames, _setTotalFrames] = useState(100);
+  const [fps, _setFps] = useState(24);
   const [brushColor, setBrushColor] = useState("#000000");
   const [brushSize, setBrushSize] = useState(2);
   const [visibleToolIds, setVisibleToolIds] = useState<Set<Tool>>(new Set(allTools.map(t => t.id)));
@@ -155,6 +169,17 @@ function App() {
     refreshHistoryState();
     return () => window.removeEventListener("retas:state-changed", handler);
   }, [refreshHistoryState]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentFrame(prev => {
+        const next = prev >= totalFrames ? 1 : prev + 1;
+        return next;
+      });
+    }, 1000 / fps);
+    return () => clearInterval(interval);
+  }, [isPlaying, fps, totalFrames]);
 
   const toggleToolVisibility = (toolId: Tool) => {
     setVisibleToolIds(prev => {
@@ -196,7 +221,14 @@ function App() {
       component: "timeline",
       title: "时间轴",
       position: { referencePanel: "canvas", direction: "below" },
-      params: { isPlaying, onPlayToggle: () => setIsPlaying(p => !p) },
+      params: { 
+        isPlaying, 
+        onPlayToggle: () => setIsPlaying(p => !p),
+        currentFrame,
+        totalFrames,
+        fps,
+        onFrameChange: (frame: number) => setCurrentFrame(frame)
+      },
     });
     api.getPanel("timeline")?.api.setSize({ height: 180 });
 

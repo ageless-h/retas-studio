@@ -189,7 +189,7 @@ impl CameraTrack {
         match pos {
             Ok(idx) => self.keys[idx].1.clone(),
             Err(0) => self.keys[0].1.clone(),
-            Err(idx) if idx >= self.keys.len() => self.keys.last().unwrap().1.clone(),
+            Err(idx) if idx >= self.keys.len() => self.keys.last().expect("keys non-empty checked above").1.clone(),
             Err(idx) => {
                 let (frame1, key1) = &self.keys[idx - 1];
                 let (frame2, key2) = &self.keys[idx];

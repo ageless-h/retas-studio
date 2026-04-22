@@ -71,6 +71,7 @@ pub struct Document {
     pub timeline: Timeline,
     pub selected_layers: Vec<LayerId>,
     pub modified: bool,
+    pub selection: Option<crate::advanced::undo::SelectionData>,
 }
 
 impl Document {
@@ -81,6 +82,7 @@ impl Document {
             timeline: Timeline::new(),
             selected_layers: Vec::new(),
             modified: false,
+            selection: None,
         }
     }
 

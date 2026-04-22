@@ -6,10 +6,13 @@ pub mod pipeline;
 pub mod surface;
 pub mod rasterizer;
 
-pub use device::*;
-pub use renderer::*;
-pub use texture::*;
-pub use shader::*;
-pub use pipeline::*;
-pub use surface::*;
-pub use rasterizer::*;
+pub use device::{DeviceError, RenderDevice};
+pub use renderer::{RenderError, Renderer};
+pub use texture::{DepthTexture, RenderTexture, TextureError};
+pub use shader::{
+    BRUSH_FRAGMENT_SHADER_WGSL, BRUSH_VERTEX_SHADER_WGSL, FRAGMENT_SHADER_WGSL, Shader,
+    ShaderError, VERTEX_SHADER_WGSL, create_brush_shaders, create_default_shaders,
+};
+pub use pipeline::{BlendComponent, PipelineBuilder, create_simple_vertex_layout};
+pub use surface::{RenderSurface, SurfaceSize, create_surface_for_window};
+pub use rasterizer::StrokeRasterizer;

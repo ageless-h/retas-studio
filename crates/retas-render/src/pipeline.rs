@@ -112,7 +112,8 @@ impl PipelineBuilder {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_shader.module,
-                entry_point: "vertex_main",
+                entry_point: Some("vertex_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &self.vertex_buffers,
             },
             primitive: self.primitive_state,
@@ -120,10 +121,12 @@ impl PipelineBuilder {
             multisample: self.multisample_state,
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader.module,
-                entry_point: "fragment_main",
+                entry_point: Some("fragment_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &self.color_targets,
             }),
             multiview: None,
+            cache: None,
         }))
     }
 }

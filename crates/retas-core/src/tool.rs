@@ -274,8 +274,7 @@ pub struct StampSettings {
     pub size: f64,
     pub opacity: f64,
     pub aligned: bool,
-    #[allow(dead_code)]
-    pub sample_all_layers: bool,
+    pub _sample_all_layers: bool,
 }
 
 impl Default for StampSettings {
@@ -285,7 +284,7 @@ impl Default for StampSettings {
             size: 50.0,
             opacity: 1.0,
             aligned: true,
-            sample_all_layers: false,
+            _sample_all_layers: false,
         }
     }
 }

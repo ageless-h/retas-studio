@@ -1,4 +1,5 @@
 pub mod app;
+pub mod messages;
 pub mod canvas;
 pub mod toolbar;
 pub mod timeline;
@@ -16,7 +17,8 @@ pub mod vector_layer;
 pub mod vector_layer_panel;
 pub mod vector_render;
 
-pub use app::{run, RetasApp, Message, ColorMessage, Tool, ToolMessage, LayerMessage, VectorLayerMessage, TimelineMessage, CanvasMessage};
+pub use app::{run, RetasApp};
+pub use messages::{Message, ColorMessage, Tool, ToolMessage, LayerMessage, VectorLayerMessage, TimelineMessage, CanvasMessage};
 pub use canvas::CanvasState;
 pub use layer::{LayerManager, Layer, LayerId, BlendMode};
 pub use frame::{FrameManager, Frame};
@@ -27,4 +29,4 @@ pub use effects_panel::{EffectsPanelState, EffectsMessage, EffectParamUpdate};
 pub use vector_layer::{VectorLayer, VectorPath, VectorDocument, PenToolState, PenToolMode};
 pub use vector_layer_panel::VectorLayerPanelState;
 pub use vector_render::VectorRenderer;
-pub use style::*;
+pub use style::{dark_theme, light_theme};

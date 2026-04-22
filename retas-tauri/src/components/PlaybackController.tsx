@@ -8,17 +8,30 @@ import {
 interface PlaybackControllerProps {
   totalFrames: number;
   fps?: number;
+  currentFrame?: number;
   onFrameChange?: (frame: number) => void;
 }
 
 export default function PlaybackController({ 
   totalFrames, 
   fps = 24,
+  currentFrame: externalFrame,
   onFrameChange 
 }: PlaybackControllerProps) {
-  const [currentFrame, setCurrentFrame] = useState(1);
+  const [internalFrame, setInternalFrame] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(true);
+  
+  const currentFrame = externalFrame !== undefined ? externalFrame : internalFrame;
+  const setCurrentFrame = (frame: number | ((prev: number) => number)) => {
+    const newFrame = typeof frame === 'function' ? frame(internalFrame) : frame;
+    if (externalFrame === undefined) {
+      setInternalFrame(newFrame);
+    }
+    if (onFrameChange) {
+      onFrameChange(newFrame);
+    }
+  };
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const frameInterval = 1000 / fps;
@@ -29,25 +42,24 @@ export default function PlaybackController({
     const elapsed = timestamp - lastTimeRef.current;
     
     if (elapsed >= frameInterval) {
-      setCurrentFrame(prev => {
-        const next = prev + 1;
-        if (next > totalFrames) {
-          if (isLooping) {
-            return 1;
-          } else {
-            setIsPlaying(false);
-            return totalFrames;
-          }
+      const nextFrame = currentFrame + 1;
+      if (nextFrame > totalFrames) {
+        if (isLooping) {
+          setCurrentFrame(1);
+        } else {
+          setIsPlaying(false);
+          setCurrentFrame(totalFrames);
         }
-        return next;
-      });
+      } else {
+        setCurrentFrame(nextFrame);
+      }
       lastTimeRef.current = timestamp;
     }
     
     if (isPlaying) {
       animationRef.current = requestAnimationFrame(animate);
     }
-  }, [isPlaying, isLooping, totalFrames, frameInterval]);
+  }, [isPlaying, isLooping, totalFrames, frameInterval, currentFrame]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -66,12 +78,6 @@ export default function PlaybackController({
     };
   }, [isPlaying, animate]);
 
-  useEffect(() => {
-    if (onFrameChange) {
-      onFrameChange(currentFrame);
-    }
-  }, [currentFrame, onFrameChange]);
-
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
   };
@@ -88,12 +94,12 @@ export default function PlaybackController({
 
   const handlePrevFrame = () => {
     setIsPlaying(false);
-    setCurrentFrame(prev => Math.max(1, prev - 1));
+    setCurrentFrame(Math.max(1, currentFrame - 1));
   };
 
   const handleNextFrame = () => {
     setIsPlaying(false);
-    setCurrentFrame(prev => Math.min(totalFrames, prev + 1));
+    setCurrentFrame(Math.min(totalFrames, currentFrame + 1));
   };
 
   const handleSliderChange = (value: number) => {

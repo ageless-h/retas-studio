@@ -101,7 +101,7 @@ impl Selection {
                 start_point,
                 tolerance,
                 contiguous,
-                sample_all_layers: false,
+                _sample_all_layers: false,
                 pixels: HashSet::new(),
             },
             feather: 0.0,
@@ -347,8 +347,7 @@ pub enum SelectionMask {
         start_point: Point,
         tolerance: f64,
         contiguous: bool,
-        #[allow(dead_code)]
-        sample_all_layers: bool,
+        _sample_all_layers: bool,
         pixels: HashSet<(i32, i32)>,
     },
     Bitmap {
@@ -430,8 +429,7 @@ enum MergeOp {
 pub struct MagicWandSelector {
     tolerance: f64,
     contiguous: bool,
-    #[allow(dead_code)]
-    sample_all_layers: bool,
+    _sample_all_layers: bool,
 }
 
 impl MagicWandSelector {
@@ -439,7 +437,7 @@ impl MagicWandSelector {
         Self {
             tolerance,
             contiguous,
-            sample_all_layers: false,
+            _sample_all_layers: false,
         }
     }
 

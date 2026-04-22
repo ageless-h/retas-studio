@@ -223,7 +223,7 @@ impl LayerAnimation {
             Ok(idx) => self.transform.keyframes[idx].value.clone(),
             Err(0) => self.transform.keyframes[0].value.clone(),
             Err(idx) if idx >= self.transform.keyframes.len() => {
-                self.transform.keyframes.last().unwrap().value.clone()
+                self.transform.keyframes.last().expect("keyframes non-empty checked above").value.clone()
             }
             Err(idx) => {
                 let k1 = &self.transform.keyframes[idx - 1];
@@ -260,7 +260,7 @@ impl LayerAnimation {
             Ok(idx) => self.opacity.keyframes[idx].value,
             Err(0) => self.opacity.keyframes[0].value,
             Err(idx) if idx >= self.opacity.keyframes.len() => {
-                self.opacity.keyframes.last().unwrap().value
+                self.opacity.keyframes.last().expect("keyframes non-empty checked above").value
             }
             Err(idx) => {
                 let k1 = &self.opacity.keyframes[idx - 1];

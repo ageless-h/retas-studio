@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
 import { drawStroke, DrawCommand } from "../api";
 
@@ -11,20 +11,38 @@ interface SkiaCanvasProps {
 
 export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 2 }: SkiaCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<any>(null);
   const { canvasKit, isLoading } = useCanvasKit();
   const isDrawingRef = useRef(false);
   const pointsRef = useRef<[number, number][]>([]);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
   const paintRef = useRef<any>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
 
-  // Initialize Skia surface
+  // Listen to container resize
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const targetWidth = Math.max(width, 800);
+        const targetHeight = Math.max(height, 450);
+        setCanvasSize({ width: Math.floor(targetWidth), height: Math.floor(targetHeight) });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!canvasKit || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    canvas.width = 1920;
-    canvas.height = 1080;
+    canvas.width = canvasSize.width;
+    canvas.height = canvasSize.height;
 
     const surface = canvasKit.MakeCanvasSurface(canvas);
     if (!surface) {
@@ -43,18 +61,18 @@ export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 
 
     const ctx = surface.getCanvas();
     ctx.clear(canvasKit.Color(30, 32, 38, 1));
-    
+
     const gridPaint = new canvasKit.Paint();
     gridPaint.setColor(canvasKit.Color(45, 48, 56, 1));
     gridPaint.setStrokeWidth(1);
-    
-    for (let x = 0; x < 1920; x += 40) {
-      ctx.drawLine(x, 0, x, 1080, gridPaint);
+
+    for (let x = 0; x < canvasSize.width; x += 40) {
+      ctx.drawLine(x, 0, x, canvasSize.height, gridPaint);
     }
-    for (let y = 0; y < 1080; y += 40) {
-      ctx.drawLine(0, y, 1920, y, gridPaint);
+    for (let y = 0; y < canvasSize.height; y += 40) {
+      ctx.drawLine(0, y, canvasSize.width, y, gridPaint);
     }
-    
+
     gridPaint.delete();
 
     surface.flush();
@@ -63,7 +81,7 @@ export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 
       surface.delete();
       paint.delete();
     };
-  }, [canvasKit]);
+  }, [canvasKit, canvasSize.width, canvasSize.height]);
 
   // Update paint when color or brush size changes
   useEffect(() => {
@@ -161,12 +179,20 @@ export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div 
+      ref={containerRef}
+      style={{ 
+        position: "relative", 
+        width: "100%", 
+        height: "100%",
+        overflow: "auto"
+      }}
+    >
       <canvas
         ref={canvasRef}
         style={{
-          width: `${1920 * (zoom / 100)}px`,
-          height: `${1080 * (zoom / 100)}px`,
+          width: `${canvasSize.width * (zoom / 100)}px`,
+          height: `${canvasSize.height * (zoom / 100)}px`,
           maxWidth: "100%",
           maxHeight: "100%",
           cursor: tool === "brush" ? "crosshair" : "default",

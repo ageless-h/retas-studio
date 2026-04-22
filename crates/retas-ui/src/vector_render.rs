@@ -79,39 +79,39 @@ impl VectorRenderer {
             }
             
             if curve.closed && curve.points.len() > 1 {
-                let last = curve.points.last().unwrap();
-                let first = curve.points.first().unwrap();
+                let last = curve.points.last().expect("len > 1 guarantees last");
+                let first = curve.points.first().expect("len > 1 guarantees first");
                 Self::add_bezier_segment(&mut builder, last, first, offset, zoom);
                 builder.close();
             }
         }
-        
+
         builder.build()
     }
-    
+
     fn create_stroke_path(
         curve: &retas_vector::BezierCurve,
         offset: (f32, f32),
         zoom: f32,
     ) -> canvas::Path {
         let mut builder = canvas::path::Builder::new();
-        
+
         if let Some(first) = curve.points.first() {
             builder.move_to(IcedPoint::new(
                 offset.0 + first.point.x as f32 * zoom,
                 offset.1 + first.point.y as f32 * zoom,
             ));
-            
+
             for i in 1..curve.points.len() {
                 let p1 = &curve.points[i - 1];
                 let p2 = &curve.points[i];
-                
+
                 Self::add_bezier_segment(&mut builder, p1, p2, offset, zoom);
             }
-            
+
             if curve.closed && curve.points.len() > 1 {
-                let last = curve.points.last().unwrap();
-                let first = curve.points.first().unwrap();
+                let last = curve.points.last().expect("len > 1 guarantees last");
+                let first = curve.points.first().expect("len > 1 guarantees first");
                 Self::add_bezier_segment(&mut builder, last, first, offset, zoom);
                 builder.close();
             }

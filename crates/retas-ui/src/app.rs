@@ -10,6 +10,7 @@ use crate::fill_tool::{FillToolState, FillToolMessage};
 use crate::effects_panel::{EffectsPanelState, EffectsMessage, EffectParamUpdate};
 use crate::export_panel::{ExportPanelState, ExportMessage};
 use crate::color_picker::ColorPickerState;
+use crate::messages::{Tool, Message, ColorMessage, ToolMessage, LayerMessage, VectorLayerMessage, TimelineMessage, CanvasMessage};
 
 pub struct RetasApp {
     project: Project,
@@ -25,149 +26,6 @@ pub struct RetasApp {
     current_tool: Tool,
     undo_stack: Vec<Vec<Vec<BrushPoint>>>,
     redo_stack: Vec<Vec<Vec<BrushPoint>>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Tool {
-    Brush,
-    Eraser,
-    Fill,
-    Select,
-    Move,
-    Zoom,
-    Hand,
-    Pen,
-    Text,
-}
-
-impl Tool {
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Tool::Brush => "画笔",
-            Tool::Eraser => "橡皮",
-            Tool::Fill => "填充",
-            Tool::Select => "选择",
-            Tool::Move => "移动",
-            Tool::Zoom => "缩放",
-            Tool::Hand => "抓手",
-            Tool::Pen => "钢笔",
-            Tool::Text => "文字",
-        }
-    }
-}
-
-impl Default for Tool {
-    fn default() -> Self {
-        Tool::Brush
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    NewDocument,
-    OpenDocument,
-    SaveDocument,
-    ExportPng,
-    Undo,
-    Redo,
-    ToolSelected(ToolMessage),
-    LayerSelected(LayerMessage),
-    VectorLayerSelected(VectorLayerMessage),
-    FillToolChanged(FillToolMessage),
-    EffectsChanged(EffectsMessage),
-    ExportChanged(ExportMessage),
-    TimelineChanged(TimelineMessage),
-    CanvasEvent(CanvasMessage),
-    BrushSizeChanged(f64),
-    ColorChanged(ColorMessage),
-    ClearCanvas,
-}
-
-#[derive(Debug, Clone)]
-pub enum ColorMessage {
-    PresetSelected(Color8),
-    HueChanged(f32),
-    SaturationChanged(f32),
-    ValueChanged(f32),
-    RedChanged(u8),
-    GreenChanged(u8),
-    BlueChanged(u8),
-}
-
-#[derive(Debug, Clone)]
-pub enum ToolMessage {
-    Select,
-    Move,
-    Brush,
-    Eraser,
-    Fill,
-    Eyedropper,
-    Zoom,
-    Hand,
-    Pen,
-    Text,
-}
-
-impl From<ToolMessage> for Tool {
-    fn from(msg: ToolMessage) -> Self {
-        match msg {
-            ToolMessage::Select => Tool::Select,
-            ToolMessage::Move => Tool::Move,
-            ToolMessage::Brush => Tool::Brush,
-            ToolMessage::Eraser => Tool::Eraser,
-            ToolMessage::Fill => Tool::Fill,
-            ToolMessage::Eyedropper => Tool::Select,
-            ToolMessage::Zoom => Tool::Zoom,
-            ToolMessage::Hand => Tool::Hand,
-            ToolMessage::Pen => Tool::Pen,
-            ToolMessage::Text => Tool::Text,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum LayerMessage {
-    Add,
-    Delete,
-    Duplicate,
-    MoveUp,
-    MoveDown,
-    Select(usize),
-    ToggleVisibility(usize),
-    ToggleLock(usize),
-}
-
-#[derive(Debug, Clone)]
-pub enum VectorLayerMessage {
-    Add,
-    Delete(usize),
-    Select(usize),
-    ToggleVisibility(usize),
-    MoveUp(usize),
-    MoveDown(usize),
-    SetPenMode(super::vector_layer::PenToolMode),
-}
-
-#[derive(Debug, Clone)]
-pub enum TimelineMessage {
-    FrameChanged(u32),
-    Play,
-    Pause,
-    Stop,
-    AddFrame,
-    DeleteFrame,
-}
-
-#[derive(Debug, Clone)]
-pub enum CanvasMessage {
-    MouseDown(f32, f32),
-    MouseUp(f32, f32),
-    MouseMoved(f32, f32),
-    MouseWheel(f32),
-    KeyPress(String),
-    KeyRelease(String),
-    Pan(f32, f32),
-    PenFinish,
 }
 
 impl RetasApp {
@@ -222,7 +80,6 @@ impl RetasApp {
                     }
                     Tool::Eraser => {
                         self.save_undo_state();
-                        self.canvas_state.brush_settings.color = Color8::WHITE;
                         let (canvas_x, canvas_y) = self.canvas_state.screen_to_canvas(x, y);
                         let point = BrushPoint::new(RetasPoint::new(canvas_x, canvas_y))
                             .with_timestamp(Instant::now().elapsed().as_secs_f64());
@@ -459,6 +316,238 @@ impl RetasApp {
         })
         .into()
     }
+
+    pub fn handle_layer_message(&mut self, layer_msg: LayerMessage) {
+        match layer_msg {
+            LayerMessage::Add => {
+                let new_name = format!("Layer {}", self.canvas_state.layer_manager.layer_count() + 1);
+                self.canvas_state.layer_manager.add_layer(&new_name);
+                self.layer_panel_state.add_layer(new_name);
+            }
+            LayerMessage::Delete => {
+                if let Some(selected) = self.layer_panel_state.selected {
+                    if let Some(layer) = self.canvas_state.layer_manager.layers.get(selected) {
+                        let id = layer.id;
+                        self.canvas_state.layer_manager.delete_layer(id);
+                    }
+                    self.layer_panel_state.remove_layer(selected);
+                }
+            }
+            LayerMessage::Duplicate => {
+                if let Some(selected) = self.layer_panel_state.selected {
+                    let layer_data = self.canvas_state.layer_manager.layers.get(selected).map(|layer| {
+                        (layer.name.clone(), layer.pixel_data.clone(), layer.opacity, layer.blend_mode)
+                    });
+                    if let Some((name, pixels, opacity, blend_mode)) = layer_data {
+                        let new_id = self.canvas_state.layer_manager.add_layer(format!("{} Copy", name));
+                        if let Some(new_layer) = self.canvas_state.layer_manager.get_layer_mut(new_id) {
+                            new_layer.pixel_data = pixels;
+                            new_layer.opacity = opacity;
+                            new_layer.blend_mode = blend_mode;
+                        }
+                    }
+                    self.layer_panel_state.duplicate_layer(selected);
+                }
+            }
+            LayerMessage::MoveUp => {
+                if let Some(selected) = self.layer_panel_state.selected {
+                    if let Some(layer) = self.canvas_state.layer_manager.layers.get(selected) {
+                        self.canvas_state.layer_manager.move_layer_up(layer.id);
+                    }
+                    self.layer_panel_state.move_layer_up(selected);
+                }
+            }
+            LayerMessage::MoveDown => {
+                if let Some(selected) = self.layer_panel_state.selected {
+                    if let Some(layer) = self.canvas_state.layer_manager.layers.get(selected) {
+                        self.canvas_state.layer_manager.move_layer_down(layer.id);
+                    }
+                    self.layer_panel_state.move_layer_down(selected);
+                }
+            }
+            LayerMessage::Select(index) => {
+                if let Some(layer) = self.canvas_state.layer_manager.layers.get(index) {
+                    self.canvas_state.layer_manager.set_active_layer(layer.id);
+                }
+                self.layer_panel_state.select_layer(index);
+            }
+            LayerMessage::ToggleVisibility(index) => {
+                if let Some(layer) = self.canvas_state.layer_manager.layers.get_mut(index) {
+                    layer.visible = !layer.visible;
+                }
+                self.layer_panel_state.toggle_visibility(index);
+            }
+            LayerMessage::ToggleLock(index) => {
+                if let Some(layer) = self.canvas_state.layer_manager.layers.get_mut(index) {
+                    layer.locked = !layer.locked;
+                }
+                self.layer_panel_state.toggle_lock(index);
+            }
+        }
+    }
+
+    pub fn handle_vector_layer_message(&mut self, vector_msg: VectorLayerMessage) {
+        match vector_msg {
+            VectorLayerMessage::Add => {
+                let new_name = format!("矢量图层 {}", self.canvas_state.vector_document.layers.len() + 1);
+                self.canvas_state.vector_document.create_layer(&new_name);
+                self.vector_layer_panel_state.create_layer(&new_name);
+            }
+            VectorLayerMessage::Delete(index) => {
+                self.canvas_state.vector_document.delete_layer(index);
+                self.vector_layer_panel_state.delete_layer(index);
+            }
+            VectorLayerMessage::Select(index) => {
+                self.canvas_state.vector_document.set_active_layer(index);
+                self.vector_layer_panel_state.select_layer(index);
+            }
+            VectorLayerMessage::ToggleVisibility(index) => {
+                if let Some(layer) = self.canvas_state.vector_document.layers.get_mut(index) {
+                    layer.visible = !layer.visible;
+                }
+                self.vector_layer_panel_state.toggle_visibility(index);
+            }
+            VectorLayerMessage::MoveUp(index) => {
+                if index > 0 && index < self.canvas_state.vector_document.layers.len() {
+                    self.canvas_state.vector_document.layers.swap(index, index - 1);
+                    if let Some(active) = self.canvas_state.vector_document.active_layer {
+                        if active == index {
+                            self.canvas_state.vector_document.active_layer = Some(index - 1);
+                        } else if active == index - 1 {
+                            self.canvas_state.vector_document.active_layer = Some(index);
+                        }
+                    }
+                }
+                self.vector_layer_panel_state.move_layer_up(index);
+            }
+            VectorLayerMessage::MoveDown(index) => {
+                let len = self.canvas_state.vector_document.layers.len();
+                if index < len.saturating_sub(1) {
+                    self.canvas_state.vector_document.layers.swap(index, index + 1);
+                    if let Some(active) = self.canvas_state.vector_document.active_layer {
+                        if active == index {
+                            self.canvas_state.vector_document.active_layer = Some(index + 1);
+                        } else if active == index + 1 {
+                            self.canvas_state.vector_document.active_layer = Some(index);
+                        }
+                    }
+                }
+                self.vector_layer_panel_state.move_layer_down(index);
+            }
+            VectorLayerMessage::SetPenMode(mode) => {
+                self.canvas_state.vector_document.pen_state.set_mode(mode);
+            }
+        }
+    }
+
+    pub fn handle_fill_tool_message(&mut self, fill_msg: FillToolMessage) {
+        match fill_msg {
+            FillToolMessage::SetMode(mode) => self.fill_tool_state.set_mode(mode),
+            FillToolMessage::SetTolerance(tolerance) => self.fill_tool_state.set_tolerance(tolerance),
+            FillToolMessage::SetGapRadius(radius) => self.fill_tool_state.set_gap_radius(radius),
+            FillToolMessage::ToggleAntiAliasing => self.fill_tool_state.toggle_anti_aliasing(),
+            FillToolMessage::ToggleFillBehindLines => self.fill_tool_state.toggle_fill_behind_lines(),
+        }
+    }
+
+    pub fn handle_effects_message(&mut self, effects_msg: EffectsMessage) {
+        match effects_msg {
+            EffectsMessage::AddEffect(effect_type) => {
+                self.effects_panel_state.add_effect(effect_type);
+            }
+            EffectsMessage::RemoveEffect(index) => {
+                self.effects_panel_state.remove_effect(index);
+            }
+            EffectsMessage::ToggleEffect(index) => {
+                self.effects_panel_state.toggle_effect(index);
+            }
+            EffectsMessage::SelectEffect(index) => {
+                self.effects_panel_state.select_effect(index);
+            }
+            EffectsMessage::UpdateEffectParam(index, param) => {
+                if let Some(effect) = self.effects_panel_state.effect_stack.effects.get_mut(index) {
+                    match param {
+                        EffectParamUpdate::Opacity(v) => effect.opacity = v,
+                        EffectParamUpdate::BlurRadius(v) => {
+                            if let retas_core::advanced::effects::EffectParameters::GaussianBlur { radius } = &mut effect.parameters {
+                                *radius = v;
+                            }
+                        }
+                        EffectParamUpdate::Brightness(v) => {
+                            if let retas_core::advanced::effects::EffectParameters::BrightnessContrast { brightness, .. } = &mut effect.parameters {
+                                *brightness = v;
+                            }
+                        }
+                        EffectParamUpdate::Contrast(v) => {
+                            if let retas_core::advanced::effects::EffectParameters::BrightnessContrast { contrast, .. } = &mut effect.parameters {
+                                *contrast = v;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_timeline_message(&mut self, timeline_msg: TimelineMessage) {
+        match timeline_msg {
+            TimelineMessage::FrameChanged(frame) => {
+                self.timeline_state.go_to_frame(frame);
+            }
+            TimelineMessage::Play => {
+                self.timeline_state.toggle_play();
+            }
+            TimelineMessage::Pause => {
+                self.timeline_state.is_playing = false;
+            }
+            TimelineMessage::Stop => {
+                self.timeline_state.stop();
+            }
+            TimelineMessage::AddFrame => {
+                self.timeline_state.total_frames += 1;
+                self.timeline_state.end_frame += 1;
+            }
+            TimelineMessage::DeleteFrame => {
+                if self.timeline_state.total_frames > 1 {
+                    self.timeline_state.total_frames -= 1;
+                    self.timeline_state.end_frame = self.timeline_state.end_frame.saturating_sub(1);
+                }
+            }
+        }
+    }
+
+    pub fn handle_color_message(&mut self, color_msg: ColorMessage) {
+        match color_msg {
+            ColorMessage::PresetSelected(color) => {
+                self.color_picker_state.set_color(color);
+                self.canvas_state.set_brush_color(color);
+            }
+            ColorMessage::HueChanged(h) => {
+                self.color_picker_state.set_hsv(h, self.color_picker_state.saturation, self.color_picker_state.value);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+            ColorMessage::SaturationChanged(s) => {
+                self.color_picker_state.set_hsv(self.color_picker_state.hue, s, self.color_picker_state.value);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+            ColorMessage::ValueChanged(v) => {
+                self.color_picker_state.set_hsv(self.color_picker_state.hue, self.color_picker_state.saturation, v);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+            ColorMessage::RedChanged(r) => {
+                self.color_picker_state.set_rgb(r, self.color_picker_state.green, self.color_picker_state.blue);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+            ColorMessage::GreenChanged(g) => {
+                self.color_picker_state.set_rgb(self.color_picker_state.red, g, self.color_picker_state.blue);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+            ColorMessage::BlueChanged(b) => {
+                self.color_picker_state.set_rgb(self.color_picker_state.red, self.color_picker_state.green, b);
+                self.canvas_state.set_brush_color(self.color_picker_state.primary_color);
+            }
+        }
+    }
 }
 
 fn new() -> (RetasApp, Task<Message>) {
@@ -555,258 +644,23 @@ fn update(app: &mut RetasApp, message: Message) -> Task<Message> {
                 _ => {}
             }
         }
-        Message::LayerSelected(layer_msg) => {
-            match layer_msg {
-                LayerMessage::Add => {
-                    let new_name = format!("Layer {}", app.canvas_state.layer_manager.layer_count() + 1);
-                    app.canvas_state.layer_manager.add_layer(&new_name);
-                    app.layer_panel_state.add_layer(new_name);
-                }
-                LayerMessage::Delete => {
-                    if let Some(selected) = app.layer_panel_state.selected {
-                        if let Some(layer) = app.canvas_state.layer_manager.layers.get(selected) {
-                            let id = layer.id;
-                            app.canvas_state.layer_manager.delete_layer(id);
-                        }
-                        app.layer_panel_state.remove_layer(selected);
-                    }
-                }
-                LayerMessage::Duplicate => {
-                    if let Some(selected) = app.layer_panel_state.selected {
-                        // Clone data first to avoid borrow issues
-                        let layer_data = app.canvas_state.layer_manager.layers.get(selected).map(|layer| {
-                            (layer.name.clone(), layer.pixel_data.clone(), layer.opacity, layer.blend_mode)
-                        });
-                        
-                        if let Some((name, pixels, opacity, blend_mode)) = layer_data {
-                            let new_id = app.canvas_state.layer_manager.add_layer(format!("{} Copy", name));
-                            if let Some(new_layer) = app.canvas_state.layer_manager.get_layer_mut(new_id) {
-                                new_layer.pixel_data = pixels;
-                                new_layer.opacity = opacity;
-                                new_layer.blend_mode = blend_mode;
-                            }
-                        }
-                        app.layer_panel_state.duplicate_layer(selected);
-                    }
-                }
-                LayerMessage::MoveUp => {
-                    if let Some(selected) = app.layer_panel_state.selected {
-                        if let Some(layer) = app.canvas_state.layer_manager.layers.get(selected) {
-                            app.canvas_state.layer_manager.move_layer_up(layer.id);
-                        }
-                        app.layer_panel_state.move_layer_up(selected);
-                    }
-                }
-                LayerMessage::MoveDown => {
-                    if let Some(selected) = app.layer_panel_state.selected {
-                        if let Some(layer) = app.canvas_state.layer_manager.layers.get(selected) {
-                            app.canvas_state.layer_manager.move_layer_down(layer.id);
-                        }
-                        app.layer_panel_state.move_layer_down(selected);
-                    }
-                }
-                LayerMessage::Select(index) => {
-                    if let Some(layer) = app.canvas_state.layer_manager.layers.get(index) {
-                        app.canvas_state.layer_manager.set_active_layer(layer.id);
-                    }
-                    app.layer_panel_state.select_layer(index);
-                }
-                LayerMessage::ToggleVisibility(index) => {
-                    if let Some(layer) = app.canvas_state.layer_manager.layers.get_mut(index) {
-                        layer.visible = !layer.visible;
-                    }
-                    app.layer_panel_state.toggle_visibility(index);
-                }
-                LayerMessage::ToggleLock(index) => {
-                    if let Some(layer) = app.canvas_state.layer_manager.layers.get_mut(index) {
-                        layer.locked = !layer.locked;
-                    }
-                    app.layer_panel_state.toggle_lock(index);
-                }
-            }
-        }
-        Message::VectorLayerSelected(vector_msg) => {
-            match vector_msg {
-                VectorLayerMessage::Add => {
-                    let new_name = format!("矢量图层 {}", app.canvas_state.vector_document.layers.len() + 1);
-                    app.canvas_state.vector_document.create_layer(&new_name);
-                    app.vector_layer_panel_state.create_layer(&new_name);
-                }
-                VectorLayerMessage::Delete(index) => {
-                    app.canvas_state.vector_document.delete_layer(index);
-                    app.vector_layer_panel_state.delete_layer(index);
-                }
-                VectorLayerMessage::Select(index) => {
-                    app.canvas_state.vector_document.set_active_layer(index);
-                    app.vector_layer_panel_state.select_layer(index);
-                }
-                VectorLayerMessage::ToggleVisibility(index) => {
-                    if let Some(layer) = app.canvas_state.vector_document.layers.get_mut(index) {
-                        layer.visible = !layer.visible;
-                    }
-                    app.vector_layer_panel_state.toggle_visibility(index);
-                }
-                VectorLayerMessage::MoveUp(index) => {
-                    if index > 0 && index < app.canvas_state.vector_document.layers.len() {
-                        app.canvas_state.vector_document.layers.swap(index, index - 1);
-                        if let Some(active) = app.canvas_state.vector_document.active_layer {
-                            if active == index {
-                                app.canvas_state.vector_document.active_layer = Some(index - 1);
-                            } else if active == index - 1 {
-                                app.canvas_state.vector_document.active_layer = Some(index);
-                            }
-                        }
-                    }
-                    app.vector_layer_panel_state.move_layer_up(index);
-                }
-                VectorLayerMessage::MoveDown(index) => {
-                    let len = app.canvas_state.vector_document.layers.len();
-                    if index < len.saturating_sub(1) {
-                        app.canvas_state.vector_document.layers.swap(index, index + 1);
-                        if let Some(active) = app.canvas_state.vector_document.active_layer {
-                            if active == index {
-                                app.canvas_state.vector_document.active_layer = Some(index + 1);
-                            } else if active == index + 1 {
-                                app.canvas_state.vector_document.active_layer = Some(index);
-                            }
-                        }
-                    }
-                    app.vector_layer_panel_state.move_layer_down(index);
-                }
-                VectorLayerMessage::SetPenMode(mode) => {
-                    app.canvas_state.vector_document.pen_state.set_mode(mode);
-                }
-            }
-        }
-        Message::FillToolChanged(fill_msg) => {
-            match fill_msg {
-                FillToolMessage::SetMode(mode) => {
-                    app.fill_tool_state.set_mode(mode);
-                }
-                FillToolMessage::SetTolerance(tolerance) => {
-                    app.fill_tool_state.set_tolerance(tolerance);
-                }
-                FillToolMessage::SetGapRadius(radius) => {
-                    app.fill_tool_state.set_gap_radius(radius);
-                }
-                FillToolMessage::ToggleAntiAliasing => {
-                    app.fill_tool_state.toggle_anti_aliasing();
-                }
-                FillToolMessage::ToggleFillBehindLines => {
-                    app.fill_tool_state.toggle_fill_behind_lines();
-                }
-            }
-        }
-        Message::EffectsChanged(effects_msg) => {
-            match effects_msg {
-                EffectsMessage::AddEffect(effect_type) => {
-                    app.effects_panel_state.add_effect(effect_type);
-                }
-                EffectsMessage::RemoveEffect(index) => {
-                    app.effects_panel_state.remove_effect(index);
-                }
-                EffectsMessage::ToggleEffect(index) => {
-                    app.effects_panel_state.toggle_effect(index);
-                }
-                EffectsMessage::SelectEffect(index) => {
-                    app.effects_panel_state.select_effect(index);
-                }
-                EffectsMessage::UpdateEffectParam(index, param) => {
-                    if let Some(effect) = app.effects_panel_state.effect_stack.effects.get_mut(index) {
-                        match param {
-                            EffectParamUpdate::Opacity(v) => effect.opacity = v,
-                            EffectParamUpdate::BlurRadius(v) => {
-                                if let retas_core::advanced::effects::EffectParameters::GaussianBlur { radius } = &mut effect.parameters {
-                                    *radius = v;
-                                }
-                            }
-                            EffectParamUpdate::Brightness(v) => {
-                                if let retas_core::advanced::effects::EffectParameters::BrightnessContrast { brightness, .. } = &mut effect.parameters {
-                                    *brightness = v;
-                                }
-                            }
-                            EffectParamUpdate::Contrast(v) => {
-                                if let retas_core::advanced::effects::EffectParameters::BrightnessContrast { contrast, .. } = &mut effect.parameters {
-                                    *contrast = v;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        Message::LayerSelected(layer_msg) => app.handle_layer_message(layer_msg),
+        Message::VectorLayerSelected(vector_msg) => app.handle_vector_layer_message(vector_msg),
+        Message::FillToolChanged(fill_msg) => app.handle_fill_tool_message(fill_msg),
+        Message::EffectsChanged(effects_msg) => app.handle_effects_message(effects_msg),
         Message::ExportChanged(export_msg) => {
-            match export_msg {
-                ExportMessage::QueueExport(doc_id) => {
-                    app.export_panel_state.queue_export(doc_id);
-                }
-                _ => {}
+            if let ExportMessage::QueueExport(doc_id) = export_msg {
+                app.export_panel_state.queue_export(doc_id);
             }
         }
-        Message::TimelineChanged(timeline_msg) => {
-            match timeline_msg {
-                TimelineMessage::FrameChanged(frame) => {
-                    app.timeline_state.go_to_frame(frame);
-                }
-                TimelineMessage::Play => {
-                    app.timeline_state.toggle_play();
-                }
-                TimelineMessage::Pause => {
-                    app.timeline_state.is_playing = false;
-                }
-                TimelineMessage::Stop => {
-                    app.timeline_state.stop();
-                }
-                TimelineMessage::AddFrame => {
-                    app.timeline_state.total_frames += 1;
-                    app.timeline_state.end_frame += 1;
-                }
-                TimelineMessage::DeleteFrame => {
-                    if app.timeline_state.total_frames > 1 {
-                        app.timeline_state.total_frames -= 1;
-                        app.timeline_state.end_frame = app.timeline_state.end_frame.saturating_sub(1);
-                    }
-                }
-            }
-        }
+        Message::TimelineChanged(timeline_msg) => app.handle_timeline_message(timeline_msg),
         Message::CanvasEvent(canvas_msg) => {
             app.handle_canvas_message(canvas_msg);
         }
         Message::BrushSizeChanged(size) => {
             app.canvas_state.set_brush_size(size);
         }
-        Message::ColorChanged(color_msg) => {
-            match color_msg {
-                ColorMessage::PresetSelected(color) => {
-                    app.color_picker_state.set_color(color);
-                    app.canvas_state.set_brush_color(color);
-                }
-                ColorMessage::HueChanged(h) => {
-                    app.color_picker_state.set_hsv(h, app.color_picker_state.saturation, app.color_picker_state.value);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-                ColorMessage::SaturationChanged(s) => {
-                    app.color_picker_state.set_hsv(app.color_picker_state.hue, s, app.color_picker_state.value);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-                ColorMessage::ValueChanged(v) => {
-                    app.color_picker_state.set_hsv(app.color_picker_state.hue, app.color_picker_state.saturation, v);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-                ColorMessage::RedChanged(r) => {
-                    app.color_picker_state.set_rgb(r, app.color_picker_state.green, app.color_picker_state.blue);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-                ColorMessage::GreenChanged(g) => {
-                    app.color_picker_state.set_rgb(app.color_picker_state.red, g, app.color_picker_state.blue);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-                ColorMessage::BlueChanged(b) => {
-                    app.color_picker_state.set_rgb(app.color_picker_state.red, app.color_picker_state.green, b);
-                    app.canvas_state.set_brush_color(app.color_picker_state.primary_color);
-                }
-            }
-        }
+        Message::ColorChanged(color_msg) => app.handle_color_message(color_msg),
         Message::ClearCanvas => {
             app.save_undo_state();
             app.canvas_state.clear_canvas();

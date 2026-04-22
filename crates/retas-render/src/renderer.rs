@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 use retas_core::{Document, LayerId, Color8, BlendMode, Matrix2D, Point, Layer};
 use crate::{RenderDevice, RenderTexture, RenderSurface, Shader};
 use thiserror::Error;
+use std::sync::Arc;
 
 #[derive(Debug, Error)]
 pub enum RenderError {
@@ -63,6 +64,8 @@ pub struct Renderer {
     bind_group_layout: BindGroupLayout,
     texture_pipeline: RenderPipeline,
     blend_pipelines: std::collections::HashMap<BlendMode, RenderPipeline>,
+    complex_blend_layout: Arc<BindGroupLayout>,
+    complex_blend_pipelines: std::collections::HashMap<BlendMode, RenderPipeline>,
     quad_vertex_buffer: Buffer,
     quad_index_buffer: Buffer,
 }
@@ -88,6 +91,8 @@ impl Renderer {
         let bind_group_layout = Self::create_bind_group_layout(&device.device);
         let texture_pipeline = Self::create_texture_pipeline(&device.device, &bind_group_layout);
         let blend_pipelines = Self::create_blend_pipelines(&device.device, &bind_group_layout);
+        let complex_blend_layout = Arc::new(Self::create_complex_blend_bind_group_layout(&device.device));
+        let complex_blend_pipelines = Self::create_complex_blend_pipelines(&device.device, &complex_blend_layout);
 
         let (quad_vertex_buffer, quad_index_buffer) = Self::create_quad_buffers(&device.device);
 
@@ -97,6 +102,8 @@ impl Renderer {
             bind_group_layout,
             texture_pipeline,
             blend_pipelines,
+            complex_blend_layout,
+            complex_blend_pipelines,
             quad_vertex_buffer,
             quad_index_buffer,
         })
@@ -150,7 +157,8 @@ impl Renderer {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader.module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
@@ -178,7 +186,8 @@ impl Renderer {
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader.module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Rgba8UnormSrgb,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -186,6 +195,7 @@ impl Renderer {
                 })],
             }),
             multiview: None,
+            cache: None,
         })
     }
 
@@ -203,7 +213,6 @@ impl Renderer {
             (BlendMode::Normal, wgpu::BlendState::ALPHA_BLENDING),
             (BlendMode::Multiply, Self::multiply_blend()),
             (BlendMode::Screen, Self::screen_blend()),
-            (BlendMode::Overlay, Self::screen_blend()),
             (BlendMode::Darken, Self::darken_blend()),
             (BlendMode::Lighten, Self::lighten_blend()),
         ];
@@ -214,7 +223,8 @@ impl Renderer {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader.module,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
@@ -242,7 +252,8 @@ impl Renderer {
                 multisample: wgpu::MultisampleState::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &shader.module,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba8UnormSrgb,
                         blend: Some(blend_state),
@@ -250,11 +261,132 @@ impl Renderer {
                     })],
                 }),
                 multiview: None,
+                cache: None,
             });
             pipelines.insert(mode, pipeline);
         }
 
         pipelines
+    }
+
+    fn create_overlay_bind_group_layout(device: &Device) -> BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Overlay Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    fn create_overlay_pipeline(device: &Device, bind_group_layout: &BindGroupLayout) -> RenderPipeline {
+        Self::create_shader_pipeline(device, bind_group_layout, include_str!("shaders/overlay.wgsl"), "overlay", "Overlay")
+    }
+
+    fn create_hard_light_pipeline(device: &Device, bind_group_layout: &BindGroupLayout) -> RenderPipeline {
+        Self::create_shader_pipeline(device, bind_group_layout, include_str!("shaders/hard_light.wgsl"), "hard_light", "HardLight")
+    }
+
+    fn create_soft_light_pipeline(device: &Device, bind_group_layout: &BindGroupLayout) -> RenderPipeline {
+        Self::create_shader_pipeline(device, bind_group_layout, include_str!("shaders/soft_light.wgsl"), "soft_light", "SoftLight")
+    }
+
+    fn create_difference_pipeline(device: &Device, bind_group_layout: &BindGroupLayout) -> RenderPipeline {
+        Self::create_shader_pipeline(device, bind_group_layout, include_str!("shaders/difference.wgsl"), "difference", "Difference")
+    }
+
+    fn create_exclusion_pipeline(device: &Device, bind_group_layout: &BindGroupLayout) -> RenderPipeline {
+        Self::create_shader_pipeline(device, bind_group_layout, include_str!("shaders/exclusion.wgsl"), "exclusion", "Exclusion")
+    }
+
+    fn create_shader_pipeline(device: &Device, bind_group_layout: &BindGroupLayout, shader_source: &str, shader_name: &str, pipeline_name: &str) -> RenderPipeline {
+        let shader = Shader::from_wgsl(device, shader_source, shader_name);
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{} Pipeline Layout", pipeline_name)),
+            bind_group_layouts: &[bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(&format!("{} Pipeline", pipeline_name)),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader.module,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader.module,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+            cache: None,
+        })
     }
 
     fn multiply_blend() -> wgpu::BlendState {
@@ -303,6 +435,119 @@ impl Renderer {
             },
             alpha: wgpu::BlendComponent::OVER,
         }
+    }
+
+    fn create_complex_blend_pipelines(device: &Device, layout: &Arc<BindGroupLayout>) -> std::collections::HashMap<BlendMode, RenderPipeline> {
+        let mut pipelines = std::collections::HashMap::new();
+        
+        pipelines.insert(BlendMode::Overlay, Self::create_overlay_pipeline(device, layout));
+        pipelines.insert(BlendMode::HardLight, Self::create_hard_light_pipeline(device, layout));
+        pipelines.insert(BlendMode::SoftLight, Self::create_soft_light_pipeline(device, layout));
+        pipelines.insert(BlendMode::Difference, Self::create_difference_pipeline(device, layout));
+        pipelines.insert(BlendMode::Exclusion, Self::create_exclusion_pipeline(device, layout));
+        
+        pipelines
+    }
+
+    fn create_complex_blend_bind_group_layout(device: &Device) -> BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Complex Blend Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    fn create_complex_blend_pipeline(device: &Device, bind_group_layout: &BindGroupLayout, shader_name: &str) -> RenderPipeline {
+        let shader_path = format!("shaders/{}.wgsl", shader_name);
+        let shader = Shader::from_wgsl(device, include_str!("shaders/overlay.wgsl"), shader_name);
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{:?} Pipeline Layout", shader_name)),
+            bind_group_layouts: &[bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(&format!("{:?} Pipeline", shader_name)),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader.module,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader.module,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+            cache: None,
+        })
     }
 
     fn create_quad_buffers(device: &Device) -> (Buffer, Buffer) {
@@ -431,49 +676,129 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let bind_group = self.device.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Layer Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&layer_texture.view),
-                },
-            ],
-        });
+        let is_complex_blend = matches!(layer.base.blend_mode, 
+            BlendMode::Overlay | BlendMode::HardLight | BlendMode::SoftLight | 
+            BlendMode::Difference | BlendMode::Exclusion);
 
-        let pipeline = self.blend_pipelines
-            .get(&layer.base.blend_mode)
-            .unwrap_or(&self.texture_pipeline);
+        if is_complex_blend {
+            let backdrop_texture = RenderTexture::new(
+                &self.device.device,
+                target_texture.width,
+                target_texture.height,
+                target_texture.format,
+                Some("Complex Blend Backdrop"),
+            );
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Raster Layer Render Pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &target_texture.view,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Load,
-                    store: StoreOp::Store,
+            encoder.copy_texture_to_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &target_texture.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
                 },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+                wgpu::ImageCopyTexture {
+                    texture: &backdrop_texture.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: target_texture.width,
+                    height: target_texture.height,
+                    depth_or_array_layers: 1,
+                },
+            );
 
-        render_pass.set_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.quad_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..6, 0, 0..1);
+            if let Some(pipeline) = self.complex_blend_pipelines.get(&layer.base.blend_mode) {
+                let blend_bind_group = self.device.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Complex Blend Bind Group"),
+                    layout: &self.complex_blend_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&layer_texture.view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(&backdrop_texture.view),
+                        },
+                    ],
+                });
+
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Complex Blend Raster Layer Render Pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &target_texture.view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                render_pass.set_pipeline(pipeline);
+                render_pass.set_bind_group(0, &blend_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+                render_pass.set_index_buffer(self.quad_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..6, 0, 0..1);
+            }
+        } else {
+            let bind_group = self.device.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Layer Bind Group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&layer_texture.view),
+                    },
+                ],
+            });
+
+            let pipeline = self.blend_pipelines
+                .get(&layer.base.blend_mode)
+                .unwrap_or(&self.texture_pipeline);
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Raster Layer Render Pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_texture.view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(0, &bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.quad_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..6, 0, 0..1);
+        }
     }
 
     fn render_vector_layer(

@@ -154,7 +154,7 @@ impl Stroke {
 
         self.ramer_douglas_peucker(0, self.points.len() - 1, tolerance, &mut simplified);
 
-        simplified.push(self.points.last().unwrap().clone());
+        simplified.push(self.points.last().expect("simplify checked len >= 3").clone());
         simplified.sort_by_key(|p| p.timestamp as i64);
         simplified.dedup_by(|a, b| (a.position.x - b.position.x).abs() < 0.001 
             && (a.position.y - b.position.y).abs() < 0.001);

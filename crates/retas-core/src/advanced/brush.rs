@@ -176,8 +176,7 @@ pub struct BrushSettings {
     pub wet_edges: bool,
     pub build_up: bool,
     pub anti_aliasing: bool,
-    #[allow(dead_code)]
-    pub sample_all_layers: bool,
+    pub _sample_all_layers: bool,
 }
 
 impl Default for BrushSettings {
@@ -204,7 +203,7 @@ impl Default for BrushSettings {
             wet_edges: false,
             build_up: false,
             anti_aliasing: true,
-            sample_all_layers: false,
+            _sample_all_layers: false,
         }
     }
 }

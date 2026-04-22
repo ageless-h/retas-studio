@@ -392,8 +392,6 @@ impl ExposureCell {
 pub struct PlaybackController {
     timeline: TimelineState,
     elapsed_time: f64,
-    #[allow(dead_code)]
-    last_frame_time: f64,
     frame_accumulator: f64,
     direction: i32,
 }
@@ -403,7 +401,6 @@ impl PlaybackController {
         Self {
             timeline,
             elapsed_time: 0.0,
-            last_frame_time: 0.0,
             frame_accumulator: 0.0,
             direction: 1,
         }

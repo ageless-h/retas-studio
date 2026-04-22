@@ -42,6 +42,7 @@ impl RenderDevice {
                     label: Some("RETAS Render Device"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::default(),
                 },
                 None,
             )
@@ -79,6 +80,7 @@ impl RenderDevice {
                     label: Some("RETAS Render Device"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::default(),
                 },
                 None,
             )

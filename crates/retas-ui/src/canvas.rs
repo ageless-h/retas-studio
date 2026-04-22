@@ -7,7 +7,7 @@ use retas_vector::{BezierCurve, BezierControlPoint};
 use retas_core::Point;
 use std::time::Instant;
 
-use super::app::CanvasMessage;
+use super::messages::CanvasMessage;
 use super::Message;
 use super::layer::{LayerManager, LayerId};
 use super::vector_layer::{VectorDocument, VectorLayer, VectorPath, PenToolState, PenToolMode};
@@ -157,7 +157,7 @@ impl CanvasState {
             self.cache_dirty = false;
             handle
         } else {
-            self.cached_handle.clone().unwrap()
+            self.cached_handle.clone().expect("cached_handle is Some in else branch")
         }
     }
     
@@ -268,12 +268,13 @@ impl CanvasState {
         };
         
         let settings = self.brush_settings.clone();
+        let erase = self.current_tool == CanvasTool::Eraser;
         let mut modified = false;
-        
+
         for window in points.windows(2) {
             let p1 = &window[0];
             let p2 = &window[1];
-            
+
             if let Some(layer) = self.layer_manager.get_layer_mut(layer_id) {
                 if layer.locked {
                     continue;
@@ -286,6 +287,7 @@ impl CanvasState {
                     p2.position.y as i32,
                     settings.size as i32,
                     settings.color,
+                    erase,
                 );
                 modified = true;
             }
@@ -317,7 +319,7 @@ impl CanvasState {
     }
 }
 
-fn draw_line_on_layer(layer: &mut super::layer::Layer, x0: i32, y0: i32, x1: i32, y1: i32, radius: i32, color: Color8) {
+fn draw_line_on_layer(layer: &mut super::layer::Layer, x0: i32, y0: i32, x1: i32, y1: i32, radius: i32, color: Color8, erase: bool) {
     let dx = (x1 - x0).abs();
     let dy = (y1 - y0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -325,14 +327,14 @@ fn draw_line_on_layer(layer: &mut super::layer::Layer, x0: i32, y0: i32, x1: i32
     let mut err = dx - dy;
     let mut x = x0;
     let mut y = y0;
-    
+
     loop {
-        draw_circle_on_layer(layer, x, y, radius, color, 1.0);
-        
+        draw_circle_on_layer(layer, x, y, radius, color, 1.0, erase);
+
         if x == x1 && y == y1 {
             break;
         }
-        
+
         let e2 = 2 * err;
         if e2 > -dy {
             err -= dy;
@@ -345,22 +347,31 @@ fn draw_line_on_layer(layer: &mut super::layer::Layer, x0: i32, y0: i32, x1: i32
     }
 }
 
-fn draw_circle_on_layer(layer: &mut super::layer::Layer, cx: i32, cy: i32, radius: i32, color: Color8, opacity: f64) {
+fn draw_circle_on_layer(layer: &mut super::layer::Layer, cx: i32, cy: i32, radius: i32, color: Color8, opacity: f64, erase: bool) {
     let width = layer.width as i32;
     let height = layer.height as i32;
-    
+
     for dy in -radius..=radius {
         for dx in -radius..=radius {
             if dx * dx + dy * dy <= radius * radius {
                 let x = cx + dx;
                 let y = cy + dy;
-                
+
                 if x >= 0 && x < width && y >= 0 && y < height {
                     let idx = ((y * width + x) * 4) as usize;
-                    let alpha = opacity;
-                    let inv_alpha = 1.0 - alpha;
-                    
-                    if idx + 3 < layer.pixel_data.len() {
+
+                    if idx + 3 >= layer.pixel_data.len() {
+                        continue;
+                    }
+
+                    if erase {
+                        let alpha = opacity;
+                        let inv_alpha = 1.0 - alpha;
+                        let current_alpha = layer.pixel_data[idx + 3] as f64;
+                        layer.pixel_data[idx + 3] = (current_alpha * inv_alpha) as u8;
+                    } else {
+                        let alpha = opacity;
+                        let inv_alpha = 1.0 - alpha;
                         layer.pixel_data[idx] = (color.r as f64 * alpha + layer.pixel_data[idx] as f64 * inv_alpha) as u8;
                         layer.pixel_data[idx + 1] = (color.g as f64 * alpha + layer.pixel_data[idx + 1] as f64 * inv_alpha) as u8;
                         layer.pixel_data[idx + 2] = (color.b as f64 * alpha + layer.pixel_data[idx + 2] as f64 * inv_alpha) as u8;

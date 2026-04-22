@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@blueprintjs/core";
 import { 
   Brush, Eraser, PenTool, PaintBucket, 
@@ -42,12 +42,23 @@ interface ToolBoxProps {
 }
 
 export default function ToolBox({ currentTool, onToolChange }: ToolBoxProps) {
-  const [expandedCategory, setExpandedCategory] = useState<ToolCategory>("brush");
+  const [expandedCategory, setExpandedCategory] = useState<ToolCategory | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setExpandedCategory(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const toolsByCategory = (category: ToolCategory) => TOOLS.filter(t => t.category === category);
 
   return (
-    <div style={{
+    <div ref={containerRef} style={{
       display: "flex",
       flexDirection: "column",
       width: 52,
@@ -68,7 +79,7 @@ export default function ToolBox({ currentTool, onToolChange }: ToolBoxProps) {
               color: expandedCategory === cat.id ? "#58a6ff" : "#8b949e",
               borderLeft: expandedCategory === cat.id ? "2px solid #58a6ff" : "2px solid transparent",
             }}
-            onClick={() => setExpandedCategory(expandedCategory === cat.id ? (cat.id as ToolCategory) : cat.id)}
+            onClick={() => setExpandedCategory(expandedCategory === cat.id ? null : cat.id)}
             title={cat.label}
           >
             {toolsByCategory(cat.id)[0]?.icon}
@@ -95,7 +106,10 @@ export default function ToolBox({ currentTool, onToolChange }: ToolBoxProps) {
                   minimal
                   small
                   active={currentTool === tool.id}
-                  onClick={() => onToolChange(tool.id)}
+                  onClick={() => {
+                    onToolChange(tool.id);
+                    setExpandedCategory(null);
+                  }}
                   style={{
                     width: 40,
                     height: 40,

@@ -21,6 +21,9 @@ const AgGridReact = lazy(() => import("ag-grid-react").then(m => ({ default: m.A
 interface TimelineProps {
   isPlaying: boolean;
   onPlayToggle: () => void;
+  currentFrame: number;
+  totalFrames: number;
+  onFrameChange: (frame: number) => void;
 }
 
 interface TimelineRow {
@@ -29,8 +32,8 @@ interface TimelineRow {
   [key: string]: any;
 }
 
-export default function Timeline({ isPlaying, onPlayToggle }: TimelineProps) {
-  const [frameInfo, setFrameInfo] = useState<FrameInfo>({ current: 1, total: 100, fps: 24 });
+export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalFrames, onFrameChange }: TimelineProps) {
+  const [frameInfo, setFrameInfo] = useState<FrameInfo>({ current: currentFrame, total: totalFrames, fps: 24 });
   const [rowData, setRowData] = useState<TimelineRow[]>([]);
   const gridRef = useRef<any>(null);
 
@@ -69,6 +72,7 @@ export default function Timeline({ isPlaying, onPlayToggle }: TimelineProps) {
     try {
       await setCurrentFrame(frame);
       setFrameInfo(prev => ({ ...prev, current: frame }));
+      onFrameChange(frame);
     } catch (e) {
       console.error(e);
     }

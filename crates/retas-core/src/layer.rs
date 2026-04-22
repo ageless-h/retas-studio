@@ -100,6 +100,7 @@ pub struct RasterLayer {
     pub base: LayerBase,
     pub frames: HashMap<u32, RasterFrame>,
     pub current_frame: u32,
+    pub offset: super::Point,
 }
 
 impl RasterLayer {
@@ -108,6 +109,7 @@ impl RasterLayer {
             base: LayerBase::new(name, LayerType::Raster),
             frames: HashMap::new(),
             current_frame: 0,
+            offset: super::Point::ZERO,
         }
     }
 }

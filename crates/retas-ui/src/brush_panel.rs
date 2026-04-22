@@ -86,7 +86,7 @@ pub fn view<'a>(
                 slider(
                     1.0..=50.0,
                     dynamic_brush.size_min,
-                    |v| Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))
+                    |v| Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))
                 )
                 .step(1.0)
                 .width(Length::Fixed(100.0)),
@@ -96,7 +96,7 @@ pub fn view<'a>(
             row![
                 text("压感").size(10),
                 button(text(if dynamic_brush.size_pressure { "开" } else { "关" }).size(9))
-                    .on_press(Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))),
+                    .on_press(Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))),
             ]
             .spacing(4),
         ]
@@ -112,7 +112,7 @@ pub fn view<'a>(
                 slider(
                     0.0..=1.0,
                     dynamic_brush.opacity_min,
-                    |v| Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))
+                    |v| Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))
                 )
                 .step(0.05)
                 .width(Length::Fixed(100.0)),
@@ -122,7 +122,7 @@ pub fn view<'a>(
             row![
                 text("压感").size(10),
                 button(text(if dynamic_brush.opacity_pressure { "开" } else { "关" }).size(9))
-                    .on_press(Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))),
+                    .on_press(Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))),
             ]
             .spacing(4),
         ]
@@ -132,11 +132,11 @@ pub fn view<'a>(
     
     let curve_buttons = row![
         button(text("线性").size(9))
-            .on_press(Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))),
+            .on_press(Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))),
         button(text("柔和").size(9))
-            .on_press(Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))),
+            .on_press(Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))),
         button(text("硬边").size(9))
-            .on_press(Message::CanvasEvent(super::app::CanvasMessage::MouseDown(0.0, 0.0))),
+            .on_press(Message::CanvasEvent(super::messages::CanvasMessage::MouseDown(0.0, 0.0))),
     ]
     .spacing(2);
     
