@@ -2,11 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
 
-mod ai;
 mod state;
 use state::AppState;
 
-use ai::AiJobType;
 use retas_core::Layer as RetasLayer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -269,155 +267,6 @@ fn save_document(path: String, state: State<Arc<AppState>>) -> Result<(), String
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AiProcessRequest {
-    pub feature: String,
-    pub image_data: Vec<u8>,
-    pub params: serde_json::Value,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AiProcessResult {
-    pub success: bool,
-    pub image_data: Option<Vec<u8>>,
-    pub error: Option<String>,
-    pub processing_time_ms: u64,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AiQueueStatus {
-    pub pending: usize,
-    pub max_size: usize,
-    pub is_full: bool,
-}
-
-#[tauri::command]
-async fn ai_auto_color(
-    request: AiProcessRequest,
-    state: State<'_, Arc<AppState>>,
-) -> Result<AiProcessResult, String> {
-    let start = std::time::Instant::now();
-    let queue = state
-        .ai_queue
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or("AI queue not initialized")?;
-
-    let result = queue
-        .submit(AiJobType::AutoColor, request.image_data, request.params)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    match result {
-        Ok(data) => Ok(AiProcessResult {
-            success: true,
-            image_data: Some(data),
-            error: None,
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-        Err(e) => Ok(AiProcessResult {
-            success: false,
-            image_data: None,
-            error: Some(e.to_string()),
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-    }
-}
-
-#[tauri::command]
-async fn ai_inbetween(
-    prev_frame: Vec<u8>,
-    next_frame: Vec<u8>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<AiProcessResult, String> {
-    let start = std::time::Instant::now();
-    let queue = state
-        .ai_queue
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or("AI queue not initialized")?;
-
-    let params = serde_json::json!({"next_frame": next_frame});
-    let result = queue
-        .submit(AiJobType::Inbetween, prev_frame, params)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    match result {
-        Ok(data) => Ok(AiProcessResult {
-            success: true,
-            image_data: Some(data),
-            error: None,
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-        Err(e) => Ok(AiProcessResult {
-            success: false,
-            image_data: None,
-            error: Some(e.to_string()),
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-    }
-}
-
-#[tauri::command]
-async fn ai_style_transfer(
-    request: AiProcessRequest,
-    state: State<'_, Arc<AppState>>,
-) -> Result<AiProcessResult, String> {
-    let start = std::time::Instant::now();
-    let queue = state
-        .ai_queue
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or("AI queue not initialized")?;
-
-    let result = queue
-        .submit(AiJobType::StyleTransfer, request.image_data, request.params)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    match result {
-        Ok(data) => Ok(AiProcessResult {
-            success: true,
-            image_data: Some(data),
-            error: None,
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-        Err(e) => Ok(AiProcessResult {
-            success: false,
-            image_data: None,
-            error: Some(e.to_string()),
-            processing_time_ms: start.elapsed().as_millis() as u64,
-        }),
-    }
-}
-
-#[tauri::command]
-async fn ai_queue_status(state: State<'_, Arc<AppState>>) -> Result<AiQueueStatus, String> {
-    let queue_opt = {
-        let guard = state
-            .ai_queue
-            .lock()
-            .map_err(|e| e.to_string())?;
-        guard.clone()
-    };
-
-    if let Some(q) = queue_opt {
-        let pending = q.pending_count().await;
-        let is_full = q.is_full();
-        Ok(AiQueueStatus {
-            pending,
-            max_size: 50,
-            is_full,
-        })
-    } else {
-        Err("AI queue not initialized".to_string())
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -445,10 +294,6 @@ pub fn run() {
             can_redo,
             open_document,
             save_document,
-            ai_auto_color,
-            ai_inbetween,
-            ai_style_transfer,
-            ai_queue_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -20,7 +20,6 @@ import { ExportButton } from "./components/ExportDialog";
 
 import LayerPanel from "./components/LayerPanel";
 import ColorPanel from "./components/ColorPanel";
-import AiPanel from "./components/AiPanel";
 import Timeline from "./components/Timeline";
 import PlaybackController from "./components/PlaybackController";
 import SkiaCanvas from "./components/SkiaCanvas";
@@ -126,7 +125,6 @@ const components = {
       onBrushSizeChange={props.params.onBrushSizeChange || (() => {})}
     />
   ),
-  aiPanel: AiPanel,
   timeline: TimelinePanel,
   animationProps: AnimationPropsPanel,
   blendModes: BlendModesPanel,
@@ -243,24 +241,12 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
         params: { color: brushColor, onColorChange: setBrushColor, brushSize, onBrushSizeChange: setBrushSize },
       });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "color", direction: "below" },
-      });
     } else if (workspace === "animation") {
       api.addPanel({
         id: "animationProps",
         component: "animationProps",
         title: "动画属性",
         position: { referencePanel: "canvas", direction: "right" },
-      });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "animationProps", direction: "below" },
       });
     } else if (workspace === "coloring") {
       api.addPanel({
@@ -283,12 +269,6 @@ function App() {
         title: "混合模式",
         position: { referencePanel: "canvas", direction: "right" },
       });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "blendModes", direction: "below" },
-      });
     }
   }, []);
 
@@ -309,7 +289,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "ai", "animationProps", "blendModes"];
+    const rightPanelIds = ["color", "animationProps", "blendModes"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {
@@ -325,24 +305,12 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
         params: { color: brushColor, onColorChange: setBrushColor, brushSize, onBrushSizeChange: setBrushSize },
       });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "color", direction: "below" },
-      });
     } else if (currentWorkspace === "animation") {
       api.addPanel({
         id: "animationProps",
         component: "animationProps",
         title: "动画属性",
         position: { referencePanel: "canvas", direction: "right" },
-      });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "animationProps", direction: "below" },
       });
     } else if (currentWorkspace === "coloring") {
       api.addPanel({
@@ -352,24 +320,12 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
         params: { color: brushColor, onColorChange: setBrushColor, brushSize, onBrushSizeChange: setBrushSize },
       });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "color", direction: "below" },
-      });
     } else if (currentWorkspace === "compositing") {
       api.addPanel({
         id: "blendModes",
         component: "blendModes",
         title: "混合模式",
         position: { referencePanel: "canvas", direction: "right" },
-      });
-      api.addPanel({
-        id: "ai",
-        component: "aiPanel",
-        title: "AI",
-        position: { referencePanel: "blendModes", direction: "below" },
       });
     }
   }, [currentWorkspace]);

@@ -40,8 +40,8 @@
 | 模块 | 技术选择 | 原因 |
 |------|----------|------|
 | 语言 | **Rust** | 跨平台、高性能、内存安全 |
-| GUI | **Iced** 或 **Slint** | 原生 Rust，跨平台 |
-| 图形 | **WGPU** | 统一 GPU API (Metal/Vulkan/DX12/WebGPU) |
+| GUI | **Tauri 2** | Web 技术栈，跨平台，成熟生态 |
+| 图形 | **wgpu 23** | 统一 GPU API (Metal/Vulkan/DX12/WebGPU) |
 | 矢量 | **Lyon** | Rust 原生矢量渲染 |
 | 图像 | **Image-rs** | 跨平台图像处理 |
 | 音频 | **Rodio** 或 **CPAL** | 跨平台音频 |

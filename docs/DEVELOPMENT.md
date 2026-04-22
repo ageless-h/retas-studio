@@ -9,7 +9,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
 
-### 构建项目
+### 构建 Rust workspace
 
 ```bash
 cd retas-studio
@@ -19,13 +19,22 @@ cargo build
 ### 运行测试
 
 ```bash
-cargo test
+cargo test --workspace
 ```
 
-### 运行应用
+### 构建并运行 Tauri 应用
 
 ```bash
-cargo run
+cd retas-tauri
+npm install
+npm run tauri dev
+```
+
+### 生产构建
+
+```bash
+cd retas-tauri
+npm run tauri build
 ```
 
 ---
@@ -34,6 +43,30 @@ cargo run
 
 ### 模块依赖关系
 
+```
+retas-tauri
+    ├── retas-core
+    ├── retas-render
+    ├── retas-vector
+    └── retas-io
+        └── retas-core
+
+retas-render
+    └── retas-core
+
+retas-vector
+    └── retas-core
+```
+
+### 各模块职责
+
+| 模块 | 职责 | 关键类型 |
+|------|------|----------|
+| `retas-core` | 核心数据结构 | Point, Rect, Color, Layer, Document |
+| `retas-vector` | 矢量图形 | BezierCurve, Stroke, Path |
+| `retas-render` | GPU 渲染 | RenderDevice, Renderer, Texture |
+| `retas-io` | 文件格式 | CelFile, DgaFile, ScsFile, 导出器 |
+| `retas-tauri` | Tauri 应用 | Commands, State, API |
 ```
 retas-ui
     ├── retas-render
@@ -342,7 +375,7 @@ cargo build --release
 
 优化后的二进制文件位于：
 ```
-target/release/retas
+target/release/retas-tauri
 ```
 
 ---

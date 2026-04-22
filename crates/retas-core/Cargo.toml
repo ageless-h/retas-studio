@@ -6,8 +6,8 @@ license.workspace = true
 description = "Core data structures and types for RETAS Studio"
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-thiserror = "1"
-tracing = "0.1"
-nalgebra = "0.32"
-uuid = { version = "1.0", features = ["v4", "serde"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+nalgebra = { workspace = true }
+uuid = { workspace = true }

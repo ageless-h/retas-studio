@@ -1,12 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use retas_core::{Document, Layer, RasterLayer, History};
-
-use crate::ai::{AiPipeline, AiQueue, PipelineConfig};
 
 pub struct AppState {
     pub document: Mutex<Document>,
     pub history: Mutex<History>,
-    pub ai_queue: Mutex<Option<Arc<AiQueue>>>,
 }
 
 impl AppState {
@@ -24,13 +21,9 @@ impl AppState {
         doc.timeline.layer_order.push(layer2_id);
         doc.selected_layers.push(layer2_id);
 
-        let pipeline = Arc::new(AiPipeline::new(PipelineConfig::default()));
-        let queue = Arc::new(AiQueue::new(50, pipeline));
-
         Self {
             document: Mutex::new(doc),
             history: Mutex::new(History::new(50)),
-            ai_queue: Mutex::new(Some(queue)),
         }
     }
 }

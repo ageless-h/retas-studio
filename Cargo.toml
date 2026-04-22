@@ -4,7 +4,6 @@ members = [
     "crates/retas-render",
     "crates/retas-vector",
     "crates/retas-io",
-    "crates/retas-ui",
     "retas-tauri/src-tauri",
 ]
 resolver = "2"
@@ -28,14 +27,11 @@ zip = "2"
 gif = "0.13"
 flate2 = "1"
 lyon = "1"
-iced = "0.14"
 nalgebra = "0.32"
 uuid = { version = "1", features = ["v4", "serde"] }
 raw-window-handle = "0.6"
 bytemuck = { version = "1.16", features = ["derive"] }
-rfd = "0.14"
 tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-build = { version = "2", features = [] }
@@ -44,4 +40,3 @@ retas-core = { path = "crates/retas-core" }
 retas-render = { path = "crates/retas-render" }
 retas-vector = { path = "crates/retas-vector" }
 retas-io = { path = "crates/retas-io" }
-retas-ui = { path = "crates/retas-ui" }

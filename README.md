@@ -1,171 +1,152 @@
-# RETAS STUDIO macOS 重构项目
+# RETAS Studio
+
+跨平台2D动画制作软件，基于 Rust + Tauri + wgpu 技术栈。
 
 ## 项目目标
 
-**从头重构 RETAS STUDIO**，创建原生 macOS 应用程序，实现核心动画制作功能。
+**从头重构 RETAS STUDIO**，创建现代化、跨平台的2D动画制作应用程序。
 
 ## 项目状态
 
-**当前阶段**: 核心架构完成，基础代码骨架已创建
+**当前阶段**: 核心架构完成，Tauri 前端可用
 
 ### 已完成
 - ✅ 逆向分析原始软件架构
 - ✅ 提取核心类和数据结构
-- ✅ 设计 macOS 原生架构
-- ✅ 创建 Swift Package 项目骨架
-- ✅ 实现核心数据模型
-- ✅ 实现基本工具系统
-- ✅ 创建 Metal 渲染管线
+- ✅ 设计 Rust 跨平台架构
+- ✅ 实现核心数据模型 (retas-core)
+- ✅ 实现 GPU 渲染管线 (retas-render, wgpu)
+- ✅ 实现矢量图形系统 (retas-vector)
+- ✅ 实现文件 I/O (CEL/DGA/SCS) (retas-io)
+- ✅ Tauri 前端框架 (React + TypeScript)
+- ✅ CanvasKit 画布渲染
+- ✅ 图层管理系统
+- ✅ 时间轴编辑
+- ✅ Undo/Redo 系统
+- ✅ 多种混合模式 (Normal, Multiply, Screen, Overlay, HardLight, SoftLight, Difference, Exclusion)
 
 ### 进行中
-- ⏳ 完善渲染系统
-- ⏳ 实现文件 I/O
-- ⏳ 添加更多工具
+- ⏳ 完善绘图工具 (钢笔、笔刷、填充)
+- ⏳ 洋葱皮效果
+- ⏳ 视频导出
+- ⏳ 关键帧动画系统
 
 ## 目录结构
 
 ```
-retas mac/
-├── RetasStudio/                # Swift 项目
-│   ├── Package.swift           # SPM 配置
-│   └── Sources/
-│       ├── App/                # SwiftUI 应用
-│       │   └── RetasStudioApp.swift
-│       └── Core/               # 核心模块
-│           ├── Models/         # 数据模型
-│           │   ├── Layer.swift
-│           │   ├── Document.swift
-│           │   ├── Timeline.swift
-│           │   ├── Stroke.swift
-│           │   └── Commands.swift
-│           ├── Tools/           # 工具系统
-│           │   └── Tools.swift
-│           └── Rendering/       # 渲染引擎
-│               ├── MetalRenderer.swift
-│               └── Shaders.metal
-├── docs/                       # 文档
-│   ├── ARCHITECTURE.md         # 架构设计
-│   ├── ANALYSIS.md             # 原始软件分析
-│   ├── MIGRATION_PLAN.md       # 移植计划
-│   └── HASP_SOLUTIONS.md       # 加密狗问题
-└── tools/                      # 工具脚本
-```
-
-## 从原始软件提取的核心类
-
-### 图层系统
-```
-CLayer (基类)
-├── CRasterLayer          - 光栅图层
-│   ├── CRasNormalLayer   - 普通图层
-│   ├── CRasDrawLayer     - 描线图层
-│   └── CRasDraftLayer    - 草稿图层
-├── CVectorLayer          - 矢量图层
-├── CCameraLayer          - 摄像机图层
-├── CTextLayer            - 文字图层
-└── CGuideLayer           - 参考线图层
-```
-
-### 工具系统
-```
-CPencilTool    - 铅笔
-CPenTool       - 钢笔  
-CBrushTool     - 笔刷
-CEraserTool    - 橡皮
-CSelectTool    - 选择
-CHandTool      - 手型
-CZoomTool      - 缩放
-CBucketTool    - 填充
-```
-
-### 时间轴系统
-```
-CScoreDocument - 摄影表文档
-CScoreWindow   - 摄影表窗口
-CKeyFrame      - 关键帧
-CCelInfo       - 赛璐珞信息
+retas-studio/
+├── Cargo.toml                    # Rust workspace
+├── crates/
+│   ├── retas-core/               # 核心数据结构与类型
+│   │   ├── src/
+│   │   └── tests/
+│   ├── retas-render/             # wgpu GPU 渲染
+│   │   ├── src/
+│   │   └── src/shaders/          # WGSL 着色器
+│   ├── retas-vector/             # 矢量图形与路径
+│   │   ├── src/
+│   │   └── tests/
+│   └── retas-io/                 # 文件格式支持 (CEL/DGA/SCS)
+│       ├── src/
+│       ├── src/export/           # 导出模块 (PNG/JPEG/GIF/SVG/SWF)
+│       └── tests/
+│
+├── retas-tauri/                  # Tauri 应用程序
+│   ├── src/                      # React + TypeScript 前端
+│   │   ├── components/           # UI 组件
+│   │   ├── hooks/                # React hooks
+│   │   ├── utils/                # 工具函数
+│   │   ├── api.ts                # Tauri command 封装
+│   │   └── App.tsx               # 主应用
+│   └── src-tauri/                # Rust Tauri 后端
+│       ├── src/
+│       └── Cargo.toml
+│
+└── docs/                         # 文档
+    ├── ANALYSIS.md               # 原始 RETAS 逆向分析
+    ├── CLASS_REFERENCE.md        # C++ 类结构参考
+    ├── CROSS_PLATFORM_ARCHITECTURE.md  # 架构设计
+    ├── DEVELOPMENT.md            # 开发指南
+    ├── FILE_FORMATS.md           # 文件格式规范
+    ├── FEATURE_COMPARISON.md     # 功能对比
+    └── IMPLEMENTATION_ROADMAP.md # 实施路线图
 ```
 
 ## 技术栈
 
 | 模块 | 技术 |
 |------|------|
-| UI | SwiftUI + AppKit |
-| 图形渲染 | Metal |
-| 矢量渲染 | CoreGraphics |
-| 数据存储 | SQLite + JSON |
-| 图像处理 | Core Image + vImage |
+| 语言 | Rust |
+| UI 框架 | Tauri 2 + React + TypeScript |
+| 前端组件 | BlueprintJS + Lucide React |
+| 画布 | CanvasKit (Skia WASM) |
+| 图形渲染 | wgpu 23 (WebGPU/Metal/Vulkan/DX12) |
+| 矢量渲染 | Lyon |
+| 图像处理 | image-rs |
+| 序列化 | Serde + JSON |
 
 ## 构建和运行
 
+### 环境要求
+- Rust 1.75+
+- Node.js 18+
+- macOS / Windows / Linux
+
+### 构建 Rust workspace
+
 ```bash
-cd "/Users/huzhiheng/Documents/RETAS.STUDIO.6.6.0/retas mac/RetasStudio"
+cd retas-studio
+cargo build
+```
 
-# 构建
-swift build
+### 运行测试
 
-# 运行
-swift run RetasStudioApp
+```bash
+cargo test --workspace
+```
 
-# 或在 Xcode 中打开
-open Package.swift
+### 构建并运行 Tauri 应用
+
+```bash
+cd retas-tauri
+npm install
+npm run tauri dev
+```
+
+### 生产构建
+
+```bash
+cd retas-tauri
+npm run tauri build
 ```
 
 ## 核心数据结构
 
 ### Document (文档)
-```swift
-class Document {
-    var layers: [LayerID: Layer]
-    var timeline: Timeline
-    var width: Int = 1920
-    var height: Int = 1080
-}
+```rust
+use retas_core::Document;
+
+let mut doc = Document::new("My Animation", 1920.0, 1080.0);
+doc.settings.frame_rate = 24.0;
+doc.timeline.end_frame = 100;
 ```
 
 ### Layer (图层)
-```swift
-protocol Layer {
-    var id: LayerID { get }
-    var name: String { get set }
-    var visible: Bool { get set }
-    var opacity: Double { get set }
-    var blendMode: BlendMode { get set }
-}
+```rust
+use retas_core::{RasterLayer, Layer};
+
+let mut raster = RasterLayer::new("Background");
+raster.base.opacity = 0.8;
+let layer = Layer::Raster(raster);
 ```
-
-### Timeline (时间轴)
-```swift
-class Timeline {
-    var layers: [LayerID]
-    var frameRate: Double = 24.0
-    var totalFrames: Int = 144
-}
-```
-
-## 下一步开发
-
-### Phase 1: 基础功能 (当前)
-1. 完善画布渲染
-2. 实现基本绘图工具
-3. 添加图层管理 UI
-
-### Phase 2: 动画功能
-1. 时间轴编辑
-2. 关键帧系统
-3. 洋葱皮效果
-
-### Phase 3: 高级功能
-1. 矢量图层
-2. 特效系统
-3. 视频导出
 
 ## 文档资源
 
-- [架构设计](docs/ARCHITECTURE.md) - 详细的技术架构文档
+- [架构设计](docs/CROSS_PLATFORM_ARCHITECTURE.md) - 详细的技术架构文档
 - [原始软件分析](docs/ANALYSIS.md) - RETAS STUDIO 逆向分析
-- [移植计划](docs/MIGRATION_PLAN.md) - 开发路线图
+- [开发指南](docs/DEVELOPMENT.md) - Rust 开发流程与代码示例
+- [文件格式规范](docs/FILE_FORMATS.md) - CEL/DGA/SCS 格式详解
 
 ---
 *项目创建: 2026-04-20*
-*最后更新: 2026-04-20*
+*最后更新: 2026-04-22*
