@@ -89,10 +89,12 @@ export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 
 
     const rgb = hexToRgb(color);
     if (tool === "eraser") {
-      paintRef.current.setColor(canvasKit.Color(255, 255, 255, 1));
+      paintRef.current.setColor(canvasKit.Color(0, 0, 0, 0));
+      paintRef.current.setBlendMode(canvasKit.BlendMode.DstOut);
       paintRef.current.setStrokeWidth(20);
     } else {
       paintRef.current.setColor(canvasKit.Color(rgb[0], rgb[1], rgb[2], 1));
+      paintRef.current.setBlendMode(canvasKit.BlendMode.SrcOver);
       paintRef.current.setStrokeWidth(brushSize);
     }
   }, [color, brushSize, tool, canvasKit]);
@@ -153,8 +155,7 @@ export default function SkiaCanvas({ tool, zoom, color = "#000000", brushSize = 
           size: brushSize,
           layerId: "current",
         };
-        const result = await drawStroke(command);
-        console.log("Draw result:", result);
+        await drawStroke(command);
       } catch (e) {
         console.error("Draw failed:", e);
       }

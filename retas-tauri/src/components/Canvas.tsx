@@ -110,8 +110,7 @@ export default function Canvas({ tool, zoom, color = "#000000", brushSize = 2 }:
           size: brushSize,
           layerId: "current",
         };
-        const result = await drawStroke(command);
-        console.log("Draw result:", result);
+        await drawStroke(command);
       } catch (e) {
         console.error("Draw failed:", e);
       }

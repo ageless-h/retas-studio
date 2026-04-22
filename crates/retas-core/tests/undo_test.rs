@@ -219,4 +219,73 @@ mod tests {
         cmd.undo(&mut doc);
         assert!(doc.selection.is_none());
     }
+
+    #[test]
+    fn test_fill_command_execute_undo() {
+        let mut doc = create_test_document();
+        let layer_id = doc.timeline.layer_order[0];
+        
+        if let retas_core::Layer::Raster(raster) = doc.layers.get_mut(&layer_id).unwrap() {
+            if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
+                frame.image_data = vec![100, 150, 200, 255].repeat(4);
+            }
+        }
+        
+        let mut cmd = FillCommand {
+            layer_id,
+            selection: None,
+            old_pixel_data: Vec::new(),
+            fill_color: retas_core::Color8::new(255, 0, 0, 255),
+            tolerance: 0.0,
+            description: "Fill red".to_string(),
+        };
+        
+        cmd.execute(&mut doc);
+        
+        if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
+            if let Some(frame) = raster.frames.get(&raster.current_frame) {
+                assert_eq!(frame.image_data, vec![255, 0, 0, 255].repeat(4));
+            }
+        }
+        
+        cmd.undo(&mut doc);
+        
+        if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
+            if let Some(frame) = raster.frames.get(&raster.current_frame) {
+                assert_eq!(frame.image_data, vec![100, 150, 200, 255].repeat(4));
+            }
+        }
+    }
+
+    #[test]
+    fn test_frame_command_execute_undo() {
+        let mut doc = create_test_document();
+        let layer_id = doc.timeline.layer_order[0];
+        
+        let new_data = vec![255, 0, 0, 255].repeat(4);
+        
+        let mut cmd = FrameCommand {
+            layer_id,
+            frame_number: 0,
+            old_frame_data: None,
+            new_frame_data: Some(new_data.clone()),
+            description: "Update frame".to_string(),
+        };
+        
+        cmd.execute(&mut doc);
+        
+        if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
+            if let Some(frame) = raster.frames.get(&0) {
+                assert_eq!(frame.image_data, new_data);
+            }
+        }
+        
+        cmd.undo(&mut doc);
+        
+        if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
+            if let Some(frame) = raster.frames.get(&0) {
+                assert!(frame.image_data.is_empty());
+            }
+        }
+    }
 }

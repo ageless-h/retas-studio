@@ -9,7 +9,6 @@ export function useKeyboardShortcuts() {
         try {
           const didUndo = await undo();
           if (didUndo) {
-            console.log("Undo executed");
             window.dispatchEvent(new CustomEvent("retas:state-changed"));
           }
         } catch (err) {
@@ -22,7 +21,6 @@ export function useKeyboardShortcuts() {
         try {
           const didRedo = await redo();
           if (didRedo) {
-            console.log("Redo executed");
             window.dispatchEvent(new CustomEvent("retas:state-changed"));
           }
         } catch (err) {

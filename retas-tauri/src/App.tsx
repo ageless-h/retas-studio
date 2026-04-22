@@ -356,8 +356,7 @@ function App() {
     try {
       const path = await showOpenDialog();
       if (path) {
-        const result = await openDocument(path);
-        console.log("Opened:", result);
+        await openDocument(path);
         window.dispatchEvent(new CustomEvent("retas:state-changed"));
       }
     } catch (e) {
@@ -370,7 +369,6 @@ function App() {
       const path = await showSaveDialog();
       if (path) {
         await saveDocument(path);
-        console.log("Saved to:", path);
       }
     } catch (e) {
       console.error("Save failed:", e);

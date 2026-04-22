@@ -482,11 +482,13 @@ impl Command for FillCommand {
                         self.old_pixel_data = frame.image_data.clone();
                     }
                     let color = self.fill_color;
-                    for chunk in frame.image_data.chunks_exact_mut(4) {
-                        chunk[0] = color.r;
-                        chunk[1] = color.g;
-                        chunk[2] = color.b;
-                        chunk[3] = color.a;
+                    for i in (0..frame.image_data.len()).step_by(4) {
+                        if i + 3 < frame.image_data.len() {
+                            frame.image_data[i] = color.r;
+                            frame.image_data[i + 1] = color.g;
+                            frame.image_data[i + 2] = color.b;
+                            frame.image_data[i + 3] = color.a;
+                        }
                     }
                 }
             }
@@ -525,9 +527,15 @@ impl Command for FrameCommand {
     fn execute(&mut self, document: &mut Document) {
         if let Some(layer) = document.layers.get_mut(&self.layer_id) {
             if let crate::Layer::Raster(raster) = layer {
-                if let Some(_data) = &self.new_frame_data {
-                    raster.current_frame = self.frame_number;
+                if let Some(frame) = raster.frames.get_mut(&self.frame_number) {
+                    if self.old_frame_data.is_none() {
+                        self.old_frame_data = Some(frame.image_data.clone());
+                    }
+                    if let Some(ref data) = self.new_frame_data {
+                        frame.image_data = data.clone();
+                    }
                 }
+                raster.current_frame = self.frame_number;
             }
         }
     }
@@ -535,9 +543,12 @@ impl Command for FrameCommand {
     fn undo(&mut self, document: &mut Document) {
         if let Some(layer) = document.layers.get_mut(&self.layer_id) {
             if let crate::Layer::Raster(raster) = layer {
-                if let Some(_data) = &self.old_frame_data {
-                    raster.current_frame = self.frame_number;
+                if let Some(frame) = raster.frames.get_mut(&self.frame_number) {
+                    if let Some(ref data) = self.old_frame_data {
+                        frame.image_data = data.clone();
+                    }
                 }
+                raster.current_frame = self.frame_number;
             }
         }
     }
