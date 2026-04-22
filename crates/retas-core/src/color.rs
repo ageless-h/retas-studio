@@ -183,10 +183,10 @@ impl From<Color8> for ColorF {
 impl From<ColorF> for Color8 {
     fn from(c: ColorF) -> Self {
         Self {
-            r: (c.r.clamp(0.0, 1.0) * 255.0) as u8,
-            g: (c.g.clamp(0.0, 1.0) * 255.0) as u8,
-            b: (c.b.clamp(0.0, 1.0) * 255.0) as u8,
-            a: (c.a.clamp(0.0, 1.0) * 255.0) as u8,
+            r: (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            g: (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            b: (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            a: (c.a.clamp(0.0, 1.0) * 255.0).round() as u8,
         }
     }
 }

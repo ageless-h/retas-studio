@@ -22,7 +22,8 @@ mod tests {
 
     #[test]
     fn test_matrix_scale() {
-        let m = Matrix2D::scale(2.0, 3.0);
+        let mut m = Matrix2D::identity();
+        m.scale(2.0, 3.0);
         assert_eq!(m.a, 2.0);
         assert_eq!(m.d, 3.0);
     }
@@ -54,13 +55,15 @@ mod tests {
 
     #[test]
     fn test_matrix_determinant() {
-        let m = Matrix2D::scale(2.0, 3.0);
+        let mut m = Matrix2D::identity();
+        m.scale(2.0, 3.0);
         assert_eq!(m.determinant(), 6.0);
     }
 
     #[test]
     fn test_matrix_inverse() {
-        let m = Matrix2D::scale(2.0, 2.0);
+        let mut m = Matrix2D::identity();
+        m.scale(2.0, 2.0);
         let inv = m.inverse().unwrap();
         let result = m.multiply(&inv);
         

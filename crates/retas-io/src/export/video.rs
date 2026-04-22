@@ -9,24 +9,92 @@ impl VideoExporter {
         path: &std::path::Path,
         options: &VideoExportOptions,
     ) -> Result<(), ExportError> {
-        let total_frames = options.end_frame - options.start_frame + 1;
-        
         match options.format {
             VideoFormat::GifAnimation => {
                 Self::export_gif(document, path, options)
             }
             _ => {
-                for frame in options.start_frame..=options.end_frame {
-                    let frame_path = path.with_extension(format!("frame_{:04}.png", frame));
-                    let img_options = ImageExportOptions::new(ImageFormat::Png)
-                        .with_size(options.width, options.height);
-                    
-                    crate::export::ImageExporter::export_document(document, frame, &frame_path, &img_options)?;
-                }
-                
-                Err(ExportError::UnsupportedFormat(
-                    "Video export requires external ffmpeg. Frames have been exported.".to_string()
-                ))
+                Self::export_video_with_ffmpeg(document, path, options)
+            }
+        }
+    }
+
+    fn export_video_with_ffmpeg(
+        document: &Document,
+        path: &std::path::Path,
+        options: &VideoExportOptions,
+    ) -> Result<(), ExportError> {
+        let temp_dir = std::env::temp_dir().join("retas_video_export");
+        std::fs::create_dir_all(&temp_dir)?;
+
+        let frame_files: Vec<std::path::PathBuf> = (options.start_frame..=options.end_frame)
+            .map(|frame| {
+                let frame_path = temp_dir.join(format!("frame_{:04}.png", frame));
+                let img_options = ImageExportOptions::new(ImageFormat::Png)
+                    .with_size(options.width, options.height);
+                (frame, frame_path, img_options)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(frame, frame_path, img_options)| {
+                crate::export::ImageExporter::export_document(document, frame, &frame_path, &img_options)
+                    .map(|_| frame_path)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let input_pattern = temp_dir.join("frame_%04d.png");
+        let codec = match options.format {
+            VideoFormat::Mp4 => "libx264",
+            VideoFormat::WebM => "libvpx-vp9",
+            VideoFormat::Avi => "libxvid",
+            VideoFormat::Mov => "libx264",
+            _ => "libx264",
+        };
+
+        let pix_fmt = match options.format {
+            VideoFormat::WebM => "yuv420p",
+            _ => "yuv420p",
+        };
+
+        let crf = match options.quality {
+            0..=30 => 30,
+            31..=60 => 23,
+            61..=90 => 18,
+            _ => 15,
+        };
+
+        let output = std::process::Command::new("ffmpeg")
+            .args(&[
+                "-y",
+                "-framerate", &format!("{}", options.frame_rate),
+                "-i", &input_pattern.to_string_lossy(),
+                "-c:v", codec,
+                "-pix_fmt", pix_fmt,
+                "-crf", &crf.to_string(),
+                "-preset", "medium",
+                "-movflags", "+faststart",
+                &path.to_string_lossy(),
+            ])
+            .output();
+
+        for frame_file in &frame_files {
+            std::fs::remove_file(frame_file).ok();
+        }
+        std::fs::remove_dir(&temp_dir).ok();
+
+        match output {
+            Ok(result) if result.status.success() => Ok(()),
+            Ok(result) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                Err(ExportError::InvalidDocument(format!(
+                    "FFmpeg failed: {}. Ensure ffmpeg is installed and in PATH.",
+                    stderr.lines().next().unwrap_or("unknown error")
+                )))
+            }
+            Err(e) => {
+                Err(ExportError::InvalidDocument(format!(
+                    "Failed to spawn FFmpeg: {}. Ensure ffmpeg is installed and in PATH.", e
+                )))
             }
         }
     }

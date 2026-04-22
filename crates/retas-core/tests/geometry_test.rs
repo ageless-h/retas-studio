@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use retas_core::{Point, Size, Rect, Vector2D};
 
     #[test]
     fn test_point_creation() {

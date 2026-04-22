@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use retas_core::{BezierCurve, BezierControlPoint, BezierPointType, Point};
+    use retas_core::Point;
+    use retas_vector::{BezierCurve, BezierControlPoint, BezierPointType};
 
     #[test]
     fn test_bezier_curve_creation() {
