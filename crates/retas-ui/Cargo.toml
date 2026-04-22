@@ -1,0 +1,15 @@
+[package]
+name = "retas-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cross-platform UI for RETAS Studio"
+
+[dependencies]
+retas-core = { path = "../retas-core" }
+retas-render = { path = "../retas-render" }
+retas-vector = { path = "../retas-vector" }
+retas-io = { path = "../retas-io" }
+iced = { workspace = true }
+tracing = { workspace = true }
+rfd = "0.14"

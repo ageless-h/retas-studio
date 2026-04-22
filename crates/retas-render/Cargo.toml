@@ -1,0 +1,17 @@
+[package]
+name = "retas-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cross-platform GPU rendering for RETAS Studio"
+
+[dependencies]
+retas-core = { path = "../retas-core" }
+retas-vector = { path = "../retas-vector" }
+wgpu = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+raw-window-handle = "0.6"
+bytemuck = { version = "1.16", features = ["derive"] }

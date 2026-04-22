@@ -1,0 +1,18 @@
+[package]
+name = "retas-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "File format support for RETAS Studio (.cel, .dga, .scs, etc.)"
+
+[dependencies]
+retas-core = { path = "../retas-core" }
+retas-vector = { path = "../retas-vector" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zip = { workspace = true }
+image = { workspace = true }
+gif = { workspace = true }
+flate2 = { workspace = true }

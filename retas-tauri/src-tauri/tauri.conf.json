@@ -1,0 +1,29 @@
+{
+  "productName": "RETAS Studio",
+  "version": "1.0.0",
+  "identifier": "com.retas.studio",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RETAS Studio",
+        "width": 1600,
+        "height": 1000,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

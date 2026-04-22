@@ -1,0 +1,328 @@
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-alpine.css";
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", Roboto, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #161b22;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: #0d1117;
+}
+
+/* Toolbar */
+.toolbar {
+  height: 48px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.toolbar .bp5-button {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  transition: all 0.15s ease;
+}
+
+.toolbar .bp5-button:hover {
+  background: #30363d;
+  border-color: #484f58;
+}
+
+.toolbar .bp5-button.bp5-active {
+  background: #1f6feb;
+  border-color: #388bfd;
+  color: white;
+}
+
+/* Main content */
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebars */
+.sidebar {
+  width: 240px;
+  background: #161b22;
+  border-right: 1px solid #30363d;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-right {
+  border-right: none;
+  border-left: 1px solid #30363d;
+}
+
+/* Panel */
+.panel {
+  padding: 12px;
+  border-bottom: 1px solid #21262d;
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Canvas area */
+.canvas-container {
+  flex: 1;
+  background: #0d1117;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 16px;
+}
+
+canvas {
+  background: white;
+  box-shadow: 0 0 0 1px #30363d, 0 4px 12px rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+}
+
+/* Timeline */
+.timeline-container {
+  height: 120px;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 12px;
+}
+
+/* AG Grid dark theme overrides */
+.ag-theme-alpine {
+  --ag-background-color: #161b22;
+  --ag-header-background-color: #21262d;
+  --ag-odd-row-background-color: #161b22;
+  --ag-even-row-background-color: #0d1117;
+  --ag-border-color: #30363d;
+  --ag-header-foreground-color: #8b949e;
+  --ag-foreground-color: #e6edf3;
+  --ag-row-hover-color: #1f6feb33;
+  --ag-selected-row-background-color: #1f6feb44;
+  --ag-alpine-active-color: #1f6feb;
+  --ag-range-selection-border-color: #1f6feb;
+  --ag-range-selection-background-color: #1f6feb33;
+}
+
+.ag-theme-alpine .ag-header-cell {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ag-theme-alpine .ag-cell {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timeline-row-even {
+  background: #161b22 !important;
+}
+
+.timeline-row-odd {
+  background: #0d1117 !important;
+}
+
+/* Color picker */
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+  border-color: #e6edf3;
+}
+
+.color-swatch.active {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 2px #1f6feb33;
+}
+
+/* Status bar */
+.status-bar {
+  height: 24px;
+  background: #0d1117;
+  border-top: 1px solid #21262d;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: #8b949e;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel {
+  animation: fadeIn 0.2s ease;
+}
+
+/* Button groups in toolbar */
+.toolbar .bp5-button-group {
+  gap: 2px;
+}
+
+.toolbar .bp5-divider {
+  background: #30363d !important;
+}
+
+/* Slider styling */
+.bp5-slider-track {
+  background: #21262d !important;
+  height: 4px !important;
+}
+
+.bp5-slider-progress {
+  background: #1f6feb !important;
+}
+
+.bp5-slider-handle {
+  border-color: #1f6feb !important;
+  background: #21262d !important;
+}
+
+/* Layer list items */
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+}
+
+.layer-item:hover {
+  background: #21262d;
+}
+
+.layer-item.active {
+  background: #1f6feb33;
+  border: 1px solid #1f6feb44;
+}
+
+.layer-item .bp5-button {
+  opacity: 0.6;
+}
+
+.layer-item .bp5-button:hover {
+  opacity: 1;
+}
+
+.dockview-theme-dark {
+  --dv-background-color: #0d1117;
+  --dv-tabs-container-scrollbar-color: #484f58;
+  --dv-activegroup-visible-panel-tab-background-color: #161b22;
+  --dv-activegroup-hidden-panel-tab-background-color: #0d1117;
+  --dv-inactivegroup-visible-panel-tab-background-color: #161b22;
+  --dv-inactivegroup-hidden-panel-tab-background-color: #0d1117;
+  --dv-tab-divider-color: #30363d;
+  --dv-activegrouppanel-background-color: #161b22;
+  --dv-inactivegrouppanel-background-color: #161b22;
+  --dv-separator-border: #30363d;
+  --dv-paneview-header-border-color: #30363d;
+  --dv-icon-hover-background-color: #30363d;
+  --dv-floating-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.dockview-theme-dark .dv-react-tab {
+  color: #8b949e;
+  font-size: 11px;
+}
+
+.dockview-theme-dark .dv-react-tab.dv-active-tab {
+  color: #e6edf3;
+}
+
+.dockview-theme-dark .dv-react-tab-content {
+  padding: 4px 8px;
+}
+
+.dockview-theme-dark .dv-react-panel {
+  background: #161b22;
+}
+
+.dockview-theme-dark .dv-tabs-and-actions-container {
+  background: #0d1117;
+  border-bottom: 1px solid #30363d;
+}
+
+.dockview-theme-dark .dv-groupview {
+  background: #161b22;
+}
+
+.dockview-theme-dark .dv-watermark {
+  background: #0d1117;
+  color: #6e7681;
+}
+
+.dockview-theme-dark .dv-drop-target {
+  background: #1f6feb33;
+  border: 2px solid #1f6feb;
+}
+
+.dockview-theme-dark .dv-split-view-container .dv-sash-container .dv-sash {
+  background: #30363d;
+}
+
+.dockview-theme-dark .dv-split-view-container .dv-sash-container .dv-sash:hover {
+  background: #58a6ff;
+}

@@ -1,0 +1,271 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - button "+ 新建" [ref=e6] [cursor=pointer]:
+        - generic [ref=e7]: +
+        - generic [ref=e8]: 新建
+      - button "📂 打开" [ref=e9] [cursor=pointer]:
+        - generic [ref=e10]: 📂
+        - generic [ref=e11]: 打开
+      - button "💾 保存" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: 💾
+        - generic [ref=e14]: 保存
+    - generic [ref=e16]:
+      - button "选择" [ref=e17] [cursor=pointer]:
+        - img [ref=e18]
+      - button "画笔" [ref=e23] [cursor=pointer]:
+        - img [ref=e24]
+      - button "钢笔" [active] [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+      - button "橡皮" [ref=e33] [cursor=pointer]:
+        - img [ref=e34]
+      - button "填充" [ref=e37] [cursor=pointer]:
+        - img [ref=e38]
+      - button "抓手" [ref=e42] [cursor=pointer]:
+        - img [ref=e43]
+    - generic [ref=e48]:
+      - button [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+      - generic [ref=e53]: 100%
+      - button [ref=e54] [cursor=pointer]:
+        - img [ref=e55]
+    - generic [ref=e58]: "当前工具: 钢笔"
+  - generic [ref=e59]:
+    - generic [ref=e61]:
+      - generic [ref=e63]: 图层
+      - generic [ref=e64]:
+        - button "新建" [ref=e65] [cursor=pointer]:
+          - img [ref=e66]
+          - generic [ref=e67]: 新建
+        - button "删除" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+          - generic [ref=e72]: 删除
+    - generic [ref=e259]: 单击开始绘制路径
+    - generic [ref=e76]:
+      - generic [ref=e77]:
+        - generic [ref=e78]: 颜色
+        - generic [ref=e80]: "#000000"
+        - generic [ref=e81]: 预设
+        - generic [ref=e82]:
+          - button [ref=e83] [cursor=pointer]
+          - button [ref=e84] [cursor=pointer]
+          - button [ref=e85] [cursor=pointer]
+          - button [ref=e86] [cursor=pointer]
+          - button [ref=e87] [cursor=pointer]
+          - button [ref=e88] [cursor=pointer]
+          - button [ref=e89] [cursor=pointer]
+          - button [ref=e90] [cursor=pointer]
+          - button [ref=e91] [cursor=pointer]
+          - button [ref=e92] [cursor=pointer]
+      - generic [ref=e93]:
+        - generic [ref=e94]: 笔刷大小
+        - generic [ref=e95]:
+          - generic:
+            - generic [ref=e99]: "1"
+            - generic [ref=e100]: "21"
+            - generic [ref=e101]: "41"
+            - generic [ref=e102]: "61"
+            - generic [ref=e103]: "81"
+          - slider [ref=e104] [cursor=pointer]:
+            - generic [ref=e105]: "2"
+        - generic [ref=e106]: 2px
+  - generic [ref=e107]:
+    - generic [ref=e108]:
+      - button "起始" [ref=e109] [cursor=pointer]:
+        - img [ref=e110]
+        - generic [ref=e112]: 起始
+      - button "上一帧" [ref=e113] [cursor=pointer]:
+        - img [ref=e114]
+        - generic [ref=e116]: 上一帧
+      - button "播放" [ref=e117] [cursor=pointer]:
+        - img [ref=e118]
+        - generic [ref=e120]: 播放
+      - button "下一帧" [ref=e121] [cursor=pointer]:
+        - img [ref=e122]
+        - generic [ref=e124]: 下一帧
+    - generic [ref=e127]:
+      - treegrid [ref=e129]:
+        - rowgroup [ref=e130]:
+          - row "图层" [ref=e131]:
+            - columnheader "图层" [ref=e132]:
+              - text: 
+              - generic [ref=e260] [cursor=pointer]: 图层
+              - text: 
+              - generic:    
+        - rowgroup [ref=e135]:
+          - row "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18" [ref=e136]:
+            - columnheader "1" [ref=e137]:
+              - text: 
+              - generic: "1"
+              - text: 
+              - generic:    
+            - columnheader "2" [ref=e139]:
+              - text: 
+              - generic: "2"
+              - text: 
+              - generic:    
+            - columnheader "3" [ref=e141]:
+              - text: 
+              - generic: "3"
+              - text: 
+              - generic:    
+            - columnheader "4" [ref=e143]:
+              - text: 
+              - generic: "4"
+              - text: 
+              - generic:    
+            - columnheader "5" [ref=e145]:
+              - text: 
+              - generic: "5"
+              - text: 
+              - generic:    
+            - columnheader "6" [ref=e147]:
+              - text: 
+              - generic: "6"
+              - text: 
+              - generic:    
+            - columnheader "7" [ref=e149]:
+              - text: 
+              - generic: "7"
+              - text: 
+              - generic:    
+            - columnheader "8" [ref=e151]:
+              - text: 
+              - generic: "8"
+              - text: 
+              - generic:    
+            - columnheader "9" [ref=e153]:
+              - text: 
+              - generic: "9"
+              - text: 
+              - generic:    
+            - columnheader "10" [ref=e155]:
+              - text: 
+              - generic: "10"
+              - text: 
+              - generic:    
+            - columnheader "11" [ref=e157]:
+              - text: 
+              - generic: "11"
+              - text: 
+              - generic:    
+            - columnheader "12" [ref=e159]:
+              - text: 
+              - generic: "12"
+              - text: 
+              - generic:    
+            - columnheader "13" [ref=e161]:
+              - text: 
+              - generic: "13"
+              - text: 
+              - generic:    
+            - columnheader "14" [ref=e163]:
+              - text: 
+              - generic: "14"
+              - text: 
+              - generic:    
+            - columnheader "15" [ref=e165]:
+              - text: 
+              - generic: "15"
+              - text: 
+              - generic:    
+            - columnheader "16" [ref=e167]:
+              - text: 
+              - generic: "16"
+              - text: 
+              - generic:    
+            - columnheader "17" [ref=e169]:
+              - text: 
+              - generic: "17"
+              - text: 
+              - generic:    
+            - columnheader "18" [ref=e171]:
+              - text: 
+              - generic: "18"
+              - text: 
+              - generic:    
+        - rowgroup [ref=e173]:
+          - row "背景" [ref=e261]:
+            - gridcell "背景" [ref=e262]
+          - row "图层 1" [ref=e263]:
+            - gridcell "图层 1" [ref=e264]
+          - row "图层 2" [ref=e265]:
+            - gridcell "图层 2" [ref=e266]
+        - rowgroup [ref=e180]:
+          - row "key key key key key key" [ref=e267]:
+            - gridcell [ref=e268]
+            - gridcell [ref=e269]
+            - gridcell "key" [ref=e270]
+            - gridcell [ref=e271]
+            - gridcell [ref=e272]
+            - gridcell "key" [ref=e273]
+            - gridcell [ref=e274]
+            - gridcell [ref=e275]
+            - gridcell "key" [ref=e276]
+            - gridcell [ref=e277]
+            - gridcell [ref=e278]
+            - gridcell "key" [ref=e279]
+            - gridcell [ref=e280]
+            - gridcell [ref=e281]
+            - gridcell "key" [ref=e282]
+            - gridcell [ref=e283]
+            - gridcell [ref=e284]
+            - gridcell "key" [ref=e285]
+          - row "key key key key key key" [ref=e286]:
+            - gridcell [ref=e287]
+            - gridcell [ref=e288]
+            - gridcell "key" [ref=e289]
+            - gridcell [ref=e290]
+            - gridcell [ref=e291]
+            - gridcell "key" [ref=e292]
+            - gridcell [ref=e293]
+            - gridcell [ref=e294]
+            - gridcell "key" [ref=e295]
+            - gridcell [ref=e296]
+            - gridcell [ref=e297]
+            - gridcell "key" [ref=e298]
+            - gridcell [ref=e299]
+            - gridcell [ref=e300]
+            - gridcell "key" [ref=e301]
+            - gridcell [ref=e302]
+            - gridcell [ref=e303]
+            - gridcell "key" [ref=e304]
+          - row "key key key key key key" [ref=e305]:
+            - gridcell [ref=e306]
+            - gridcell [ref=e307]
+            - gridcell "key" [ref=e308]
+            - gridcell [ref=e309]
+            - gridcell [ref=e310]
+            - gridcell "key" [ref=e311]
+            - gridcell [ref=e312]
+            - gridcell [ref=e313]
+            - gridcell "key" [ref=e314]
+            - gridcell [ref=e315]
+            - gridcell [ref=e316]
+            - gridcell "key" [ref=e317]
+            - gridcell [ref=e318]
+            - gridcell [ref=e319]
+            - gridcell "key" [ref=e320]
+            - gridcell [ref=e321]
+            - gridcell [ref=e322]
+            - gridcell "key" [ref=e323]
+        - rowgroup
+        - rowgroup
+        - rowgroup
+        - rowgroup
+        - rowgroup
+        - rowgroup
+        - rowgroup
+      - text:    
+    - generic [ref=e242]:
+      - generic [ref=e243]: "帧: 1 / 100 | 24 帧/秒"
+      - generic [ref=e244]:
+        - button "增加帧" [ref=e245] [cursor=pointer]:
+          - img [ref=e246]
+          - generic [ref=e247]: 增加帧
+        - button "删除帧" [ref=e248] [cursor=pointer]:
+          - img [ref=e249]
+          - generic [ref=e252]: 删除帧
+  - generic [ref=e253]:
+    - generic [ref=e254]: RETAS Studio v1.0
+    - generic [ref=e255]: 1920 x 1080 | 24fps

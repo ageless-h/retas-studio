@@ -1,0 +1,13 @@
+[package]
+name = "retas-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Core data structures and types for RETAS Studio"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+tracing = "0.1"
+nalgebra = "0.32"
+uuid = { version = "1.0", features = ["v4", "serde"] }
