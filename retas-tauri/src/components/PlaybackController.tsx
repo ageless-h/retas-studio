@@ -136,6 +136,7 @@ export default function PlaybackController({
         />
         <Button 
           minimal 
+          data-testid="playback-play-pause"
           icon={isPlaying ? <Pause size={16} /> : <Play size={16} />}
           onClick={handlePlayPause}
           intent={isPlaying ? "primary" : "none"}

@@ -22,9 +22,7 @@ import LayerPanel from "./components/LayerPanel";
 import ColorPanel from "./components/ColorPanel";
 import Timeline from "./components/Timeline";
 import PlaybackController from "./components/PlaybackController";
-import SkiaCanvas from "./components/SkiaCanvas";
-import PenToolCanvas from "./components/PenTool";
-import SelectionToolCanvas from "./components/SelectionTool";
+import UnifiedCanvas from "./components/UnifiedCanvas";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand";
 
@@ -56,14 +54,7 @@ function CanvasPanel(props: IDockviewPanelProps<{ tool?: string; zoom?: number; 
   const color = props.params.color || "#000000";
   const brushSize = props.params.brushSize || 2;
 
-  switch (tool) {
-    case "pen":
-      return <PenToolCanvas zoom={zoom} />;
-    case "select":
-      return <SelectionToolCanvas zoom={zoom} />;
-    default:
-      return <SkiaCanvas tool={tool} zoom={zoom} color={color} brushSize={brushSize} />;
-  }
+  return <UnifiedCanvas tool={tool} zoom={zoom} color={color} brushSize={brushSize} />;
 }
 
 function TimelinePanel(props: IDockviewPanelProps<{ isPlaying?: boolean; onPlayToggle?: () => void; currentFrame?: number; totalFrames?: number; fps?: number; onFrameChange?: (frame: number) => void }>) {
@@ -281,9 +272,19 @@ function App() {
     }
   }, [currentTool, zoom, brushColor, brushSize]);
 
+  const updateColorPanel = useCallback(() => {
+    if (apiRef.current) {
+      const panel = apiRef.current.getPanel("color");
+      if (panel) {
+        panel.api.updateParameters({ color: brushColor, onColorChange: setBrushColor, brushSize, onBrushSizeChange: setBrushSize });
+      }
+    }
+  }, [brushColor, brushSize]);
+
   useEffect(() => {
     updateCanvas();
-  }, [updateCanvas]);
+    updateColorPanel();
+  }, [updateCanvas, updateColorPanel]);
 
   useEffect(() => {
     if (!apiRef.current) return;
@@ -404,6 +405,7 @@ function App() {
         <ButtonGroup minimal>
           <Button
             small
+            data-testid="toolbar-undo"
             icon={<Undo2 size={14} />}
             onClick={handleUndo}
             disabled={!undoAvailable}
@@ -411,6 +413,7 @@ function App() {
           />
           <Button
             small
+            data-testid="toolbar-redo"
             icon={<Redo2 size={14} />}
             onClick={handleRedo}
             disabled={!redoAvailable}

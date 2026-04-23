@@ -41,6 +41,10 @@ Cargo.lock
 /src-tauri/target/
 /src-tauri/gen/
 
+# Test artifacts
+test-results/
+playwright-report/
+
 # Temporary
 tmp/
 temp/

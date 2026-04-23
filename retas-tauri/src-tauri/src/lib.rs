@@ -25,6 +25,7 @@ pub struct FrameInfo {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DrawCommand {
     pub tool: String,
     pub points: Vec<(f64, f64)>,
@@ -167,6 +168,24 @@ fn set_current_frame(frame: u32, state: State<Arc<AppState>>) -> Result<(), Stri
 fn add_frame(state: State<Arc<AppState>>) -> Result<(), String> {
     record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let new_frame = doc.timeline.end_frame;
+    let width = doc.settings.resolution.width as u32;
+    let height = doc.settings.resolution.height as u32;
+
+    for layer in doc.layers.values_mut() {
+        if let retas_core::Layer::Raster(raster) = layer {
+            if !raster.frames.contains_key(&new_frame) {
+                raster.frames.insert(new_frame, retas_core::RasterFrame {
+                    frame_number: new_frame,
+                    image_data: vec![0u8; (width * height * 4) as usize],
+                    width,
+                    height,
+                    bounds: None,
+                });
+            }
+        }
+    }
+
     doc.timeline.end_frame += 1;
     doc.settings.total_frames += 1;
     Ok(())
@@ -183,21 +202,157 @@ fn delete_frame(state: State<Arc<AppState>>) -> Result<(), String> {
     Ok(())
 }
 
+fn draw_line_on_pixels(
+    pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    color: (u8, u8, u8),
+    size: f64,
+    is_eraser: bool,
+) {
+    let brush_radius = size.max(1.0) as i32;
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+    let steps = (dx.max(dy) / 0.5).max(1.0) as i32;
+
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let cx = x0 + (x1 - x0) * t;
+        let cy = y0 + (y1 - y0) * t;
+
+        for by in -brush_radius..=brush_radius {
+            for bx in -brush_radius..=brush_radius {
+                if bx * bx + by * by > brush_radius * brush_radius {
+                    continue;
+                }
+                let px = (cx + bx as f64) as i32;
+                let py = (cy + by as f64) as i32;
+                if px < 0 || py < 0 || px >= width as i32 || py >= height as i32 {
+                    continue;
+                }
+                let idx = ((py * width as i32 + px) * 4) as usize;
+                if is_eraser {
+                    pixels[idx] = 0;
+                    pixels[idx + 1] = 0;
+                    pixels[idx + 2] = 0;
+                    pixels[idx + 3] = 0;
+                } else {
+                    pixels[idx] = color.0;
+                    pixels[idx + 1] = color.1;
+                    pixels[idx + 2] = color.2;
+                    pixels[idx + 3] = 255;
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<String, String> {
     record_history(&state)?;
-    println!("绘制: {:?}", command);
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+
+    let layer_id = if command.layer_id == "current" {
+        doc.selected_layers.first().copied()
+    } else {
+        parse_layer_id(&command.layer_id).ok()
+    };
+
+    let layer_id = layer_id.ok_or("No selected layer")?;
+    let current_frame = doc.timeline.current_frame;
+
+    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support drawing".to_string()),
+    };
+
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let is_eraser = command.tool == "eraser";
+
+    for window in command.points.windows(2) {
+        let (x0, y0) = window[0];
+        let (x1, y1) = window[1];
+        draw_line_on_pixels(
+            &mut frame.image_data,
+            frame.width,
+            frame.height,
+            x0, y0, x1, y1,
+            command.color,
+            command.size,
+            is_eraser,
+        );
+    }
+
     Ok(format!("绘制了 {} 个点", command.points.len()))
 }
 
 #[tauri::command]
-fn get_layer_pixels(_layer_id: String, _state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
-    Ok(vec![255; 1920 * 1080 * 4])
+fn get_layer_pixels(layer_id: String, state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let id = parse_layer_id(&layer_id)?;
+    let layer = doc.layers.get(&id).ok_or("Layer not found")?;
+
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Ok(vec![]),
+    };
+
+    let current_frame = doc.timeline.current_frame;
+    let frame = raster.frames.get(&current_frame).ok_or("No frame data")?;
+    Ok(frame.image_data.clone())
 }
 
 #[tauri::command]
-fn composite_layers(_state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
-    Ok(vec![255; 1920 * 1080 * 4])
+fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+
+    let width = doc.settings.resolution.width as u32;
+    let height = doc.settings.resolution.height as u32;
+    let pixel_count = (width * height * 4) as usize;
+    let mut result = vec![255u8; pixel_count];
+
+    let current_frame = doc.timeline.current_frame;
+
+    for layer_id in &doc.timeline.layer_order {
+        let layer = match doc.layers.get(layer_id) {
+            Some(l) => l,
+            None => continue,
+        };
+
+        if !layer.base().visible {
+            continue;
+        }
+
+        let raster = match layer {
+            retas_core::Layer::Raster(r) => r,
+            _ => continue,
+        };
+
+        let frame = match raster.frames.get(&current_frame) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let blend_mode = layer.base().blend_mode;
+        let opacity = layer.base().opacity;
+
+        for i in (0..pixel_count).step_by(4) {
+            let base = retas_core::Color8::new(result[i], result[i + 1], result[i + 2], result[i + 3]);
+            let blend = retas_core::Color8::new(frame.image_data[i], frame.image_data[i + 1], frame.image_data[i + 2], frame.image_data[i + 3]);
+            let out = retas_core::composite::blend_pixels(base, blend, blend_mode, opacity);
+            result[i] = out.r;
+            result[i + 1] = out.g;
+            result[i + 2] = out.b;
+            result[i + 3] = out.a;
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]

@@ -45,7 +45,7 @@ export function useCanvasKit() {
         const CanvasKitInit = (await import("canvaskit-wasm")).default;
         const ck = await CanvasKitInit({
           locateFile: (file: string) => {
-            return `/node_modules/canvaskit-wasm/bin/${file}`;
+            return `/${file}`;
           }
         });
         canvasKitInstance = ck;

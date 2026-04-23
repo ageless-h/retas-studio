@@ -18,6 +18,7 @@ export default function ColorPanel({ color, onColorChange, brushSize, onBrushSiz
       <div className="panel">
         <div className="panel-title">颜色</div>
         <div
+          data-testid="current-color-preview"
           style={{
             width: "100%",
             height: 40,
@@ -35,6 +36,7 @@ export default function ColorPanel({ color, onColorChange, brushSize, onBrushSiz
             <Button
               key={c}
               minimal
+              data-testid={`color-preset-${c.replace("#", "")}`}
               style={{
                 width: 32,
                 height: 32,
@@ -43,7 +45,7 @@ export default function ColorPanel({ color, onColorChange, brushSize, onBrushSiz
                 borderRadius: 4,
                 padding: 0,
               }}
-              onClick={() => onColorChange(c)}
+              onClick={() => { console.log('COLOR_CHANGE', c); onColorChange(c); }}
             />
           ))}
         </div>
@@ -59,7 +61,7 @@ export default function ColorPanel({ color, onColorChange, brushSize, onBrushSiz
           value={brushSize}
           onChange={onBrushSizeChange}
         />
-        <div style={{ fontSize: 11, color: "#888", textAlign: "center", marginTop: 4 }}>
+        <div data-testid="brush-size-display" style={{ fontSize: 11, color: "#888", textAlign: "center", marginTop: 4 }}>
           {brushSize}px
         </div>
       </div>

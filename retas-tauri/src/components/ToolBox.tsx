@@ -71,6 +71,7 @@ export default function ToolBox({ currentTool, onToolChange }: ToolBoxProps) {
           <Button
             minimal
             small
+            data-testid={`tool-category-${cat.id}`}
             style={{
               width: 52,
               height: 52,
@@ -105,6 +106,7 @@ export default function ToolBox({ currentTool, onToolChange }: ToolBoxProps) {
                   key={tool.id}
                   minimal
                   small
+                  data-testid={`tool-${tool.id}`}
                   active={currentTool === tool.id}
                   onClick={() => {
                     onToolChange(tool.id);

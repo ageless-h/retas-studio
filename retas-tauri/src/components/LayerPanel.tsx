@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@blueprintjs/core";
 import { Eye, EyeOff, Lock, Unlock, Plus, Trash2 } from "lucide-react";
-import { getLayers, addLayer, deleteLayer, toggleLayerVisibility, toggleLayerLock, LayerInfo } from "../api";
+import { getLayers, addLayer, deleteLayer, toggleLayerVisibility, toggleLayerLock, selectLayer, LayerInfo } from "../api";
 
 export default function LayerPanel() {
   const [layers, setLayers] = useState<LayerInfo[]>([
@@ -76,7 +76,8 @@ export default function LayerPanel() {
           {layers.map(layer => (
             <div
               key={layer.id}
-              onClick={() => setActiveLayer(layer.id)}
+              data-testid={`layer-row-${layer.id}`}
+              onClick={() => { setActiveLayer(layer.id); selectLayer(layer.id); }}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -92,12 +93,14 @@ export default function LayerPanel() {
               <Button
                 minimal
                 small
+                data-testid={`layer-visibility-${layer.id}`}
                 icon={layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
                 onClick={(e) => handleToggleVisibility(layer.id, e)}
               />
               <Button
                 minimal
                 small
+                data-testid={`layer-lock-${layer.id}`}
                 icon={layer.locked ? <Lock size={12} /> : <Unlock size={12} />}
                 onClick={(e) => handleToggleLock(layer.id, e)}
               />
@@ -107,8 +110,8 @@ export default function LayerPanel() {
       </div>
 
       <div style={{ padding: 8, display: "flex", gap: 4 }}>
-        <Button minimal small icon={<Plus size={14} />} onClick={handleAddLayer}>新建</Button>
-        <Button minimal small icon={<Trash2 size={14} />} onClick={handleDeleteLayer}>删除</Button>
+        <Button minimal small data-testid="layer-add" icon={<Plus size={14} />} onClick={handleAddLayer}>新建</Button>
+        <Button minimal small data-testid="layer-delete" icon={<Trash2 size={14} />} onClick={handleDeleteLayer}>删除</Button>
       </div>
     </div>
   );

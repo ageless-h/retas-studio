@@ -23,6 +23,7 @@ export default function WorkspaceSwitcher() {
             key={ws.id}
             small
             minimal
+            data-testid={`workspace-${ws.id}`}
             active={currentWorkspace === ws.id}
             onClick={() => setWorkspace(ws.id)}
             style={{

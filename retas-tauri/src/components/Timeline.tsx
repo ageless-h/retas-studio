@@ -42,6 +42,14 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
     generateTimelineData();
   }, []);
 
+  useEffect(() => {
+    setFrameInfo(prev => ({
+      ...prev,
+      current: currentFrame,
+      total: totalFrames,
+    }));
+  }, [currentFrame, totalFrames]);
+
   const loadFrameInfo = async () => {
     try {
       const info = await getFrameInfo();
@@ -125,16 +133,17 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
   return (
     <div className="timeline-container">
       <ButtonGroup>
-        <Button minimal icon={<SkipBack size={14} />} onClick={() => handleFrameChange(1)}>起始</Button>
-        <Button minimal icon={<SkipBack size={14} />} onClick={() => handleFrameChange(Math.max(1, frameInfo.current - 1))}>上一帧</Button>
+        <Button minimal data-testid="frame-first" icon={<SkipBack size={14} />} onClick={() => handleFrameChange(1)}>起始</Button>
+        <Button minimal data-testid="frame-prev" icon={<SkipBack size={14} />} onClick={() => handleFrameChange(Math.max(1, frameInfo.current - 1))}>上一帧</Button>
         <Button 
           minimal 
+          data-testid="playback-toggle"
           icon={isPlaying ? <Pause size={14} /> : <Play size={14} />}
           onClick={onPlayToggle}
         >
           {isPlaying ? "暂停" : "播放"}
         </Button>
-        <Button minimal icon={<SkipForward size={14} />} onClick={() => handleFrameChange(Math.min(frameInfo.total, frameInfo.current + 1))}>下一帧</Button>
+        <Button minimal data-testid="frame-next" icon={<SkipForward size={14} />} onClick={() => handleFrameChange(Math.min(frameInfo.total, frameInfo.current + 1))}>下一帧</Button>
       </ButtonGroup>
       
       <div style={{ flex: 1, overflow: "hidden" }}>
@@ -156,12 +165,12 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
       </div>
       
       <div style={{ display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap" }}>
-        <span style={{ fontSize: 12, color: "#888" }}>
+        <span data-testid="frame-counter" style={{ fontSize: 12, color: "#888" }}>
           帧: {frameInfo.current} / {frameInfo.total} | {frameInfo.fps} 帧/秒
         </span>
         <ButtonGroup>
-          <Button minimal icon={<Plus size={14} />} onClick={handleAddFrame}>增加帧</Button>
-          <Button minimal icon={<Trash2 size={14} />} onClick={handleDeleteFrame}>删除帧</Button>
+          <Button minimal data-testid="frame-add" icon={<Plus size={14} />} onClick={handleAddFrame}>增加帧</Button>
+          <Button minimal data-testid="frame-delete" icon={<Trash2 size={14} />} onClick={handleDeleteFrame}>删除帧</Button>
         </ButtonGroup>
       </div>
     </div>
