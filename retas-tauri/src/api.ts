@@ -496,3 +496,204 @@ export async function colorReplace(
   return safeInvoke("color_replace", { layerId, frame, sourceColor, targetColor, tolerance });
 }
 
+// ─── Light Table ─────────────────────────────────────────────────
+
+export interface OnionSkinInfo {
+  enabled: boolean;
+  frames_before: number;
+  frames_after: number;
+  opacity_before: number;
+  opacity_after: number;
+  color_before: [number, number, number, number];
+  color_after: [number, number, number, number];
+  blend_mode: string;
+}
+
+export interface ReferenceLayerInfo {
+  id: string;
+  name: string;
+  image_path: string | null;
+  opacity: number;
+  visible: boolean;
+  locked: boolean;
+}
+
+export interface LightTableInfo {
+  enabled: boolean;
+  opacity: number;
+  onion_skin: OnionSkinInfo;
+  references: ReferenceLayerInfo[];
+}
+
+export async function getLightTable(frame: number): Promise<LightTableInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("get_light_table", { frame });
+}
+
+export async function setOnionSkin(
+  frame: number, enabled: boolean,
+  framesBefore: number, framesAfter: number,
+  opacityBefore: number, opacityAfter: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_onion_skin", { frame, enabled, framesBefore, framesAfter, opacityBefore, opacityAfter });
+}
+
+export async function setOnionSkinColors(
+  frame: number,
+  colorBefore: [number, number, number, number],
+  colorAfter: [number, number, number, number],
+  blendMode: string
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_onion_skin_colors", { frame, colorBefore, colorAfter, blendMode });
+}
+
+export async function addReferenceLayer(
+  frame: number, name: string, imagePath?: string
+): Promise<string> {
+  if (!isTauri) return "";
+  return safeInvoke("add_reference_layer", { frame, name, imagePath: imagePath ?? null });
+}
+
+export async function removeReferenceLayer(frame: number, referenceId: string): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("remove_reference_layer", { frame, referenceId });
+}
+
+export async function setReferenceOpacity(
+  frame: number, referenceId: string, opacity: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_reference_opacity", { frame, referenceId, opacity });
+}
+
+export async function toggleReferenceVisibility(frame: number, referenceId: string): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("toggle_reference_visibility", { frame, referenceId });
+}
+
+export async function getOnionSkinFrames(frame: number): Promise<[number, number, [number, number, number, number]][]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_onion_skin_frames", { frame });
+}
+
+// ─── Motion Check ────────────────────────────────────────────────
+
+export interface MotionCheckInfo {
+  enabled: boolean;
+  mode: string;
+  comparison_frames: number[];
+  overlay_opacity: number;
+  show_trails: boolean;
+  trail_length: number;
+}
+
+export interface TrailPointInfo {
+  x: number;
+  y: number;
+  frame: number;
+  size: number;
+}
+
+export interface TrailInfo {
+  layer_id: string;
+  points: TrailPointInfo[];
+  visible: boolean;
+}
+
+export async function getMotionCheck(frame: number): Promise<MotionCheckInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("get_motion_check", { frame });
+}
+
+export async function setMotionCheck(
+  frame: number, enabled: boolean, mode: string,
+  comparisonFrames: number[], overlayOpacity: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_motion_check", { frame, enabled, mode, comparisonFrames, overlayOpacity });
+}
+
+export async function toggleMotionTrails(frame: number, show: boolean, trailLength: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("toggle_motion_trails", { frame, show, trailLength });
+}
+
+export async function addTrailPoint(
+  layerId: string, x: number, y: number, frame: number, size: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("add_trail_point", { layerId, x, y, frame, size });
+}
+
+export async function getTrail(layerId: string): Promise<TrailInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("get_trail", { layerId });
+}
+
+export async function clearTrails(): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("clear_trails", {});
+}
+
+// ─── Selection Transform ─────────────────────────────────────────
+
+export async function offsetSelectionPixels(
+  layerId: string, frame: number, dx: number, dy: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("offset_selection_pixels", { layerId, frame, dx, dy });
+}
+
+export async function scaleSelectionPixels(
+  layerId: string, frame: number, scaleX: number, scaleY: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("scale_selection_pixels", { layerId, frame, scaleX, scaleY });
+}
+
+// ─── Batch Queue ─────────────────────────────────────────────────
+
+export interface BatchItemInfo {
+  id: number;
+  operation: string;
+  status: string;
+  priority: string;
+}
+
+export async function addBatchExport(
+  outputDir: string, format: string, startFrame: number, endFrame: number, priority: string
+): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_batch_export", { outputDir, format, startFrame, endFrame, priority });
+}
+
+export async function addBatchColorReplace(
+  sourceColor: [number, number, number], targetColor: [number, number, number],
+  tolerance: number, priority: string
+): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_batch_color_replace", { sourceColor, targetColor, tolerance, priority });
+}
+
+export async function getBatchQueue(): Promise<BatchItemInfo[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_batch_queue", {});
+}
+
+export async function cancelBatchItem(id: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("cancel_batch_item", { id });
+}
+
+export async function clearBatchCompleted(): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("clear_batch_completed", {});
+}
+
+export async function getBatchStats(): Promise<[number, number, number, number]> {
+  if (!isTauri) return [0, 0, 0, 0];
+  return safeInvoke("get_batch_stats", {});
+}
+

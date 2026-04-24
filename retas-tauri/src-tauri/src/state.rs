@@ -2,6 +2,9 @@ use std::sync::Arc;
 use retas_core::{Document, Layer, RasterLayer, RasterFrame};
 use retas_core::advanced::undo::UndoManager;
 use retas_core::advanced::render_queue::RenderQueue;
+use retas_core::advanced::light_table::LightTableManager;
+use retas_core::advanced::motion_check::MotionCheckManager;
+use retas_core::advanced::batch::BatchQueue;
 
 /// Unified editor state behind a single Mutex.
 /// Eliminates the 3-Mutex deadlock class (Issue #17).
@@ -9,6 +12,9 @@ pub struct EditorState {
     pub document: Document,
     pub undo_manager: UndoManager,
     pub render_queue: RenderQueue,
+    pub light_table: LightTableManager,
+    pub motion_check: MotionCheckManager,
+    pub batch_queue: BatchQueue,
 }
 
 impl EditorState {
@@ -50,6 +56,9 @@ impl EditorState {
             document: doc,
             undo_manager: UndoManager::new(),
             render_queue: RenderQueue::new(),
+            light_table: LightTableManager::new(),
+            motion_check: MotionCheckManager::new(),
+            batch_queue: BatchQueue::new(),
         }
     }
 }

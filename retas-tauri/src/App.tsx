@@ -34,6 +34,8 @@ import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPan
 import XSheetPanel from "./components/XSheetPanel";
 import EffectsPanel from "./components/EffectsPanel";
 import RenderQueuePanel from "./components/RenderQueuePanel";
+import LightTablePanel from "./components/LightTablePanel";
+import MotionCheckPanel from "./components/MotionCheckPanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand" | "eyedropper";
 
@@ -352,6 +354,8 @@ const components = {
   blendModes: BlendModesPanel,
   effectsPanel: EffectsPanel,
   renderQueue: RenderQueuePanel,
+  lightTable: LightTablePanel,
+  motionCheck: MotionCheckPanel,
   xsheet: XSheetWrapper,
 };
 
@@ -551,6 +555,20 @@ function App() {
         position: { referencePanel: "animationProps", direction: "below" },
         params: { currentFrame, totalFrames, onFrameChange: (frame: number) => setCurrentFrame(frame) },
       });
+      api.addPanel({
+        id: "lightTable",
+        component: "lightTable",
+        title: "灯光台",
+        position: { referencePanel: "xsheet", direction: "below" },
+        params: { currentFrame },
+      });
+      api.addPanel({
+        id: "motionCheck",
+        component: "motionCheck",
+        title: "动检",
+        position: { referencePanel: "lightTable", direction: "below" },
+        params: { currentFrame },
+      });
     } else if (workspace === "coloring") {
       api.addPanel({
         id: "color",
@@ -643,7 +661,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue"];
+    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue", "lightTable", "motionCheck"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {

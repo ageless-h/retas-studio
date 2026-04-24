@@ -12,6 +12,9 @@ use retas_core::advanced::brush::{BrushEngine, BrushSettings, BrushPoint, BrushT
 use retas_core::advanced::effect_processor::EffectProcessor;
 use retas_core::advanced::effects::{Effect, EffectType};
 use retas_core::advanced::render_queue::{RenderJob, RenderFormat, RenderQuality, RenderStatus};
+use retas_core::advanced::light_table::{LightTableManager, ReferenceLayer, OnionBlendMode};
+use retas_core::advanced::motion_check::{MotionCheckManager, MotionCheckMode};
+use retas_core::advanced::batch::{BatchQueue, BatchOperation, BatchPriority, BatchStatus, BatchItem, ExportFormat as BatchExportFormat};
 use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -2004,6 +2007,611 @@ fn color_replace(
     Ok(replaced)
 }
 
+// ─── Light Table Commands ────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OnionSkinInfo {
+    pub enabled: bool,
+    pub frames_before: u32,
+    pub frames_after: u32,
+    pub opacity_before: f64,
+    pub opacity_after: f64,
+    pub color_before: [u8; 4],
+    pub color_after: [u8; 4],
+    pub blend_mode: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReferenceLayerInfo {
+    pub id: String,
+    pub name: String,
+    pub image_path: Option<String>,
+    pub opacity: f64,
+    pub visible: bool,
+    pub locked: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LightTableInfo {
+    pub enabled: bool,
+    pub opacity: f64,
+    pub onion_skin: OnionSkinInfo,
+    pub references: Vec<ReferenceLayerInfo>,
+}
+
+#[tauri::command]
+fn get_light_table(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<LightTableInfo, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let table = editor.light_table.get(frame);
+    
+    match table {
+        Some(t) => Ok(LightTableInfo {
+            enabled: t.enabled,
+            opacity: t.opacity,
+            onion_skin: OnionSkinInfo {
+                enabled: t.onion_skin.enabled,
+                frames_before: t.onion_skin.frames_before,
+                frames_after: t.onion_skin.frames_after,
+                opacity_before: t.onion_skin.opacity_before,
+                opacity_after: t.onion_skin.opacity_after,
+                color_before: [t.onion_skin.color_before.r, t.onion_skin.color_before.g, t.onion_skin.color_before.b, t.onion_skin.color_before.a],
+                color_after: [t.onion_skin.color_after.r, t.onion_skin.color_after.g, t.onion_skin.color_after.b, t.onion_skin.color_after.a],
+                blend_mode: format!("{:?}", t.onion_skin.blend_mode),
+            },
+            references: t.reference_layers.iter().map(|r| ReferenceLayerInfo {
+                id: r.id.0.to_string(),
+                name: r.name.clone(),
+                image_path: r.image_path.clone(),
+                opacity: r.opacity,
+                visible: r.visible,
+                locked: r.locked,
+            }).collect(),
+        }),
+        None => Ok(LightTableInfo {
+            enabled: false,
+            opacity: 0.5,
+            onion_skin: OnionSkinInfo {
+                enabled: false,
+                frames_before: 1,
+                frames_after: 1,
+                opacity_before: 0.3,
+                opacity_after: 0.3,
+                color_before: [255, 0, 0, 255],
+                color_after: [0, 255, 0, 255],
+                blend_mode: "Tint".to_string(),
+            },
+            references: vec![],
+        }),
+    }
+}
+
+#[tauri::command]
+fn set_onion_skin(
+    frame: u32,
+    enabled: bool,
+    frames_before: u32,
+    frames_after: u32,
+    opacity_before: f64,
+    opacity_after: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.light_table.toggle_onion_skin(frame, enabled);
+    editor.light_table.set_onion_skin_frames(frame, frames_before, frames_after);
+    let table = editor.light_table.get_or_create(frame);
+    table.onion_skin.opacity_before = opacity_before;
+    table.onion_skin.opacity_after = opacity_after;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_onion_skin_colors(
+    frame: u32,
+    color_before: [u8; 4],
+    color_after: [u8; 4],
+    blend_mode: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let table = editor.light_table.get_or_create(frame);
+    table.onion_skin.color_before = retas_core::Color8::new(color_before[0], color_before[1], color_before[2], color_before[3]);
+    table.onion_skin.color_after = retas_core::Color8::new(color_after[0], color_after[1], color_after[2], color_after[3]);
+    table.onion_skin.blend_mode = match blend_mode.as_str() {
+        "Overlay" => OnionBlendMode::Overlay,
+        "Difference" => OnionBlendMode::Difference,
+        "Normal" => OnionBlendMode::Normal,
+        _ => OnionBlendMode::Tint,
+    };
+    Ok(())
+}
+
+#[tauri::command]
+fn add_reference_layer(
+    frame: u32,
+    name: String,
+    image_path: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let reference = match image_path {
+        Some(path) => ReferenceLayer::from_image(path, name),
+        None => ReferenceLayer::new(name),
+    };
+    let id = reference.id.0.to_string();
+    editor.light_table.add_reference(frame, reference);
+    Ok(id)
+}
+
+#[tauri::command]
+fn remove_reference_layer(
+    frame: u32,
+    reference_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let layer_id = parse_layer_id(&reference_id)?;
+    Ok(editor.light_table.remove_reference(frame, layer_id))
+}
+
+#[tauri::command]
+fn set_reference_opacity(
+    frame: u32,
+    reference_id: String,
+    opacity: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let layer_id = parse_layer_id(&reference_id)?;
+    let table = editor.light_table.get_or_create(frame);
+    if let Some(r) = table.reference_layers.iter_mut().find(|r| r.id == layer_id) {
+        r.opacity = opacity.clamp(0.0, 1.0);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn toggle_reference_visibility(
+    frame: u32,
+    reference_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let layer_id = parse_layer_id(&reference_id)?;
+    let table = editor.light_table.get_or_create(frame);
+    if let Some(r) = table.reference_layers.iter_mut().find(|r| r.id == layer_id) {
+        r.visible = !r.visible;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_onion_skin_frames(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<(u32, f64, [u8; 4])>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let frames = editor.light_table.get_onion_skin_frames(frame);
+    Ok(frames.into_iter().map(|(f, opacity, color)| {
+        (f, opacity, [color.r, color.g, color.b, color.a])
+    }).collect())
+}
+
+// ─── Motion Check Commands ───────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MotionCheckInfo {
+    pub enabled: bool,
+    pub mode: String,
+    pub comparison_frames: Vec<u32>,
+    pub overlay_opacity: f64,
+    pub show_trails: bool,
+    pub trail_length: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrailInfo {
+    pub layer_id: String,
+    pub points: Vec<TrailPointInfo>,
+    pub visible: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrailPointInfo {
+    pub x: f64,
+    pub y: f64,
+    pub frame: u32,
+    pub size: f64,
+}
+
+#[tauri::command]
+fn get_motion_check(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<MotionCheckInfo, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    match editor.motion_check.get(frame) {
+        Some(check) => Ok(MotionCheckInfo {
+            enabled: check.enabled,
+            mode: format!("{:?}", check.mode),
+            comparison_frames: check.comparison_frames.clone(),
+            overlay_opacity: check.overlay_opacity,
+            show_trails: check.show_trails,
+            trail_length: check.trail_length,
+        }),
+        None => Ok(MotionCheckInfo {
+            enabled: false,
+            mode: "Overlay".to_string(),
+            comparison_frames: vec![1],
+            overlay_opacity: 0.5,
+            show_trails: false,
+            trail_length: 5,
+        }),
+    }
+}
+
+#[tauri::command]
+fn set_motion_check(
+    frame: u32,
+    enabled: bool,
+    mode: String,
+    comparison_frames: Vec<u32>,
+    overlay_opacity: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    if enabled {
+        editor.motion_check.enable(frame);
+    } else {
+        editor.motion_check.disable(frame);
+    }
+    let check_mode = match mode.as_str() {
+        "Difference" => MotionCheckMode::Difference,
+        "SideBySide" => MotionCheckMode::SideBySide,
+        "OnionSkin" => MotionCheckMode::OnionSkin,
+        _ => MotionCheckMode::Overlay,
+    };
+    editor.motion_check.set_mode(frame, check_mode);
+    editor.motion_check.set_comparison_frames(frame, comparison_frames);
+    editor.motion_check.set_overlay_opacity(frame, overlay_opacity);
+    Ok(())
+}
+
+#[tauri::command]
+fn toggle_motion_trails(
+    frame: u32,
+    show: bool,
+    trail_length: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let check = editor.motion_check.get_mut(frame);
+    check.show_trails = show;
+    check.trail_length = trail_length;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_trail_point(
+    layer_id: String,
+    x: f64, y: f64,
+    frame: u32,
+    size: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let lid = parse_layer_id(&layer_id)?;
+    editor.motion_check.add_trail_point(lid, retas_core::Point::new(x, y), frame, size);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_trail(
+    layer_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<TrailInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let lid = parse_layer_id(&layer_id)?;
+    Ok(editor.motion_check.get_trail(lid).map(|trail| TrailInfo {
+        layer_id: trail.layer_id.0.to_string(),
+        points: trail.points.iter().map(|p| TrailPointInfo {
+            x: p.position.x,
+            y: p.position.y,
+            frame: p.frame,
+            size: p.size,
+        }).collect(),
+        visible: trail.visible,
+    }))
+}
+
+#[tauri::command]
+fn clear_trails(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.motion_check.clear_all_trails();
+    Ok(())
+}
+
+// ─── Selection Transform Commands ────────────────────────────────
+
+#[tauri::command]
+fn offset_selection_pixels(
+    layer_id: String,
+    frame: u32,
+    dx: i32, dy: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = SnapshotCommand::capture(&editor.document);
+    let lid = parse_layer_id(&layer_id)?;
+    
+    let selection_mask = editor.document.selection.as_ref()
+        .ok_or("No active selection")?
+        .mask.clone();
+    
+    let layer = editor.document.layers.get_mut(&lid)
+        .ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Not a raster layer".to_string()),
+    };
+    let frame_data = raster.frames.get_mut(&frame)
+        .ok_or("Frame not found")?;
+    
+    let w = frame_data.width as i32;
+    let h = frame_data.height as i32;
+    let mut pixels = (*frame_data.image_data).clone();
+    
+    // Collect selected pixels
+    let mask_w = selection_mask.width as i32;
+    let mask_h = selection_mask.height as i32;
+    let mut selected: Vec<(i32, i32, [u8; 4])> = Vec::new();
+    
+    for y in 0..h.min(mask_h) {
+        for x in 0..w.min(mask_w) {
+            let midx = (y * mask_w + x) as usize;
+            if midx < selection_mask.data.len() && selection_mask.data[midx] > 127 {
+                let pidx = (y * w + x) as usize * 4;
+                if pidx + 3 < pixels.len() {
+                    selected.push((x, y, [pixels[pidx], pixels[pidx+1], pixels[pidx+2], pixels[pidx+3]]));
+                    // Clear original
+                    pixels[pidx] = 0;
+                    pixels[pidx+1] = 0;
+                    pixels[pidx+2] = 0;
+                    pixels[pidx+3] = 0;
+                }
+            }
+        }
+    }
+    
+    // Place at offset
+    for (x, y, rgba) in &selected {
+        let nx = x + dx;
+        let ny = y + dy;
+        if nx >= 0 && nx < w && ny >= 0 && ny < h {
+            let pidx = (ny * w + nx) as usize * 4;
+            if pidx + 3 < pixels.len() {
+                pixels[pidx] = rgba[0];
+                pixels[pidx+1] = rgba[1];
+                pixels[pidx+2] = rgba[2];
+                pixels[pidx+3] = rgba[3];
+            }
+        }
+    }
+    
+    frame_data.image_data = Arc::new(pixels);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn scale_selection_pixels(
+    layer_id: String,
+    frame: u32,
+    scale_x: f64, scale_y: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = SnapshotCommand::capture(&editor.document);
+    let lid = parse_layer_id(&layer_id)?;
+    
+    let selection_mask = editor.document.selection.as_ref()
+        .ok_or("No active selection")?
+        .mask.clone();
+    
+    let layer = editor.document.layers.get_mut(&lid)
+        .ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Not a raster layer".to_string()),
+    };
+    let frame_data = raster.frames.get_mut(&frame)
+        .ok_or("Frame not found")?;
+    
+    let w = frame_data.width as i32;
+    let h = frame_data.height as i32;
+    let mut pixels = (*frame_data.image_data).clone();
+    
+    // Find selection bounding box
+    let mask_w = selection_mask.width as i32;
+    let mask_h = selection_mask.height as i32;
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0i32;
+    let mut max_y = 0i32;
+    let mut selected: Vec<(i32, i32, [u8; 4])> = Vec::new();
+    
+    for y in 0..h.min(mask_h) {
+        for x in 0..w.min(mask_w) {
+            let midx = (y * mask_w + x) as usize;
+            if midx < selection_mask.data.len() && selection_mask.data[midx] > 127 {
+                let pidx = (y * w + x) as usize * 4;
+                if pidx + 3 < pixels.len() {
+                    selected.push((x, y, [pixels[pidx], pixels[pidx+1], pixels[pidx+2], pixels[pidx+3]]));
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                    pixels[pidx] = 0;
+                    pixels[pidx+1] = 0;
+                    pixels[pidx+2] = 0;
+                    pixels[pidx+3] = 0;
+                }
+            }
+        }
+    }
+    
+    let cx = (min_x + max_x) as f64 / 2.0;
+    let cy = (min_y + max_y) as f64 / 2.0;
+    
+    for (x, y, rgba) in &selected {
+        let nx = ((*x as f64 - cx) * scale_x + cx).round() as i32;
+        let ny = ((*y as f64 - cy) * scale_y + cy).round() as i32;
+        if nx >= 0 && nx < w && ny >= 0 && ny < h {
+            let pidx = (ny * w + nx) as usize * 4;
+            if pidx + 3 < pixels.len() {
+                pixels[pidx] = rgba[0];
+                pixels[pidx+1] = rgba[1];
+                pixels[pidx+2] = rgba[2];
+                pixels[pidx+3] = rgba[3];
+            }
+        }
+    }
+    
+    frame_data.image_data = Arc::new(pixels);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+// ─── Batch Queue Commands ────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BatchItemInfo {
+    pub id: u64,
+    pub operation: String,
+    pub status: String,
+    pub priority: String,
+}
+
+#[tauri::command]
+fn add_batch_export(
+    output_dir: String,
+    format: String,
+    start_frame: u32,
+    end_frame: u32,
+    priority: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let fmt = match format.as_str() {
+        "jpeg" | "jpg" => BatchExportFormat::Jpeg,
+        "tga" => BatchExportFormat::Tga,
+        "bmp" => BatchExportFormat::Bmp,
+        "gif" => BatchExportFormat::Gif,
+        _ => BatchExportFormat::Png,
+    };
+    let op = BatchOperation::ExportSequence {
+        output_dir: std::path::PathBuf::from(output_dir),
+        format: fmt,
+        start_frame,
+        end_frame,
+    };
+    let pri = match priority.as_str() {
+        "Low" => BatchPriority::Low,
+        "High" => BatchPriority::High,
+        "Urgent" => BatchPriority::Urgent,
+        _ => BatchPriority::Normal,
+    };
+    let id = editor.batch_queue.add(op, pri);
+    Ok(id)
+}
+
+#[tauri::command]
+fn add_batch_color_replace(
+    source_color: (u8, u8, u8),
+    target_color: (u8, u8, u8),
+    tolerance: u8,
+    priority: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let op = BatchOperation::ColorReplace {
+        source_color: retas_core::Color8::new(source_color.0, source_color.1, source_color.2, 255),
+        target_color: retas_core::Color8::new(target_color.0, target_color.1, target_color.2, 255),
+        tolerance,
+    };
+    let pri = match priority.as_str() {
+        "Low" => BatchPriority::Low,
+        "High" => BatchPriority::High,
+        "Urgent" => BatchPriority::Urgent,
+        _ => BatchPriority::Normal,
+    };
+    let id = editor.batch_queue.add(op, pri);
+    Ok(id)
+}
+
+#[tauri::command]
+fn get_batch_queue(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<BatchItemInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let items: Vec<BatchItemInfo> = editor.batch_queue.get_all().iter().map(|item| {
+        let op_name = match &item.operation {
+            BatchOperation::ExportSequence { .. } => "导出序列",
+            BatchOperation::ConvertLayer { .. } => "图层转换",
+            BatchOperation::ApplyEffect { .. } => "应用效果",
+            BatchOperation::ResizeDocument { .. } => "调整大小",
+            BatchOperation::ColorReplace { .. } => "颜色替换",
+            BatchOperation::LineSmooth { .. } => "线条平滑",
+            BatchOperation::LineVolume { .. } => "线条粗细",
+            BatchOperation::FillConsecutive { .. } => "连续填充",
+            BatchOperation::TraceVectorize { .. } => "矢量化",
+            BatchOperation::Custom { name, .. } => name.as_str(),
+        };
+        BatchItemInfo {
+            id: item.id,
+            operation: op_name.to_string(),
+            status: format!("{:?}", item.status),
+            priority: format!("{:?}", item.priority),
+        }
+    }).collect();
+    Ok(items)
+}
+
+#[tauri::command]
+fn cancel_batch_item(
+    id: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.batch_queue.cancel(id))
+}
+
+#[tauri::command]
+fn clear_batch_completed(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.batch_queue.clear_completed();
+    Ok(())
+}
+
+#[tauri::command]
+fn get_batch_stats(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(usize, usize, usize, usize), String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok((
+        editor.batch_queue.pending_count(),
+        editor.batch_queue.running_count(),
+        editor.batch_queue.completed_count(),
+        editor.batch_queue.failed_count(),
+    ))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -2072,6 +2680,28 @@ pub fn run() {
             clear_frame,
             fill_frame,
             color_replace,
+            get_light_table,
+            set_onion_skin,
+            set_onion_skin_colors,
+            add_reference_layer,
+            remove_reference_layer,
+            set_reference_opacity,
+            toggle_reference_visibility,
+            get_onion_skin_frames,
+            get_motion_check,
+            set_motion_check,
+            toggle_motion_trails,
+            add_trail_point,
+            get_trail,
+            clear_trails,
+            offset_selection_pixels,
+            scale_selection_pixels,
+            add_batch_export,
+            add_batch_color_replace,
+            get_batch_queue,
+            cancel_batch_item,
+            clear_batch_completed,
+            get_batch_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
