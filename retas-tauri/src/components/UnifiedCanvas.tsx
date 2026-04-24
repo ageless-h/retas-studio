@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
-import { drawStroke, compositeLayers, DrawCommand, SelectionData } from "../api";
+import { drawStroke, applyStrokePixels, compositeLayers, DrawCommand, SelectionData } from "../api";
 import { canvasMonitor } from "../utils/CanvasMonitor";
 
 export interface OnionSkinSettings {
@@ -52,6 +52,8 @@ export default function UnifiedCanvas({
   const bgImageRef = useRef<any>(null);
   const rafRef = useRef<number>(0);
   const onionSkinCacheRef = useRef<Map<number, any>>(new Map());
+  const strokeSurfaceRef = useRef<any>(null);
+  const strokePaintRef = useRef<any>(null);
 
   const isDrawingRef = useRef(false);
   const pointsRef = useRef<[number, number][]>([]);
@@ -117,6 +119,18 @@ export default function UnifiedCanvas({
     paint.setAntiAlias(true);
     paintRef.current = paint;
 
+    const strokeCanvas = document.createElement('canvas');
+    strokeCanvas.width = DOC_WIDTH;
+    strokeCanvas.height = DOC_HEIGHT;
+    const strokeSurface = canvasKit.MakeCanvasSurface(strokeCanvas);
+    if (strokeSurface) {
+      strokeSurfaceRef.current = strokeSurface;
+      const strokePaint = new canvasKit.Paint();
+      strokePaint.setStyle(canvasKit.PaintStyle.Stroke);
+      strokePaint.setAntiAlias(true);
+      strokePaintRef.current = strokePaint;
+    }
+
     needsRefreshRef.current = true;
 
     return () => {
@@ -125,6 +139,12 @@ export default function UnifiedCanvas({
       try { paint.delete(); } catch {}
       if (bgImageRef.current) {
         try { bgImageRef.current.delete(); } catch {}
+      }
+      if (strokeSurfaceRef.current) {
+        try { strokeSurfaceRef.current.delete(); } catch {}
+      }
+      if (strokePaintRef.current) {
+        try { strokePaintRef.current.delete(); } catch {}
       }
       canvasMonitor.stop();
     };
@@ -141,6 +161,18 @@ export default function UnifiedCanvas({
       paintRef.current.setColor(canvasKit.Color4f(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1.0));
       paintRef.current.setBlendMode(canvasKit.BlendMode.SrcOver);
       paintRef.current.setStrokeWidth(brushSize);
+    }
+    
+    if (strokePaintRef.current) {
+      if (tool === "eraser") {
+        strokePaintRef.current.setColor(canvasKit.Color4f(0, 0, 0, 0));
+        strokePaintRef.current.setBlendMode(canvasKit.BlendMode.DstOut);
+        strokePaintRef.current.setStrokeWidth(20);
+      } else {
+        strokePaintRef.current.setColor(canvasKit.Color4f(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1.0));
+        strokePaintRef.current.setBlendMode(canvasKit.BlendMode.SrcOver);
+        strokePaintRef.current.setStrokeWidth(brushSize);
+      }
     }
   }, [color, brushSize, tool, canvasKit]);
 
@@ -199,10 +231,14 @@ export default function UnifiedCanvas({
         const tintPaint = createTintPaint(onionSkin.colorBefore, opacity);
         
         ctx.save();
-        ctx.drawImage(cachedImage, 0, 0);
+        if (tintPaint) {
+          ctx.drawImage(cachedImage, 0, 0, tintPaint);
+        } else {
+          ctx.drawImage(cachedImage, 0, 0);
+        }
         ctx.restore();
         
-        tintPaint.delete();
+        if (tintPaint) tintPaint.delete();
       }
     }
     
@@ -216,10 +252,14 @@ export default function UnifiedCanvas({
         const tintPaint = createTintPaint(onionSkin.colorAfter, opacity);
         
         ctx.save();
-        ctx.drawImage(cachedImage, 0, 0);
+        if (tintPaint) {
+          ctx.drawImage(cachedImage, 0, 0, tintPaint);
+        } else {
+          ctx.drawImage(cachedImage, 0, 0);
+        }
         ctx.restore();
         
-        tintPaint.delete();
+        if (tintPaint) tintPaint.delete();
       }
     }
   }, [canvasKit, onionSkin, currentFrame, totalFrames]);
@@ -362,6 +402,13 @@ export default function UnifiedCanvas({
         const pos = getCanvasPos(e);
         lastPosRef.current = pos;
         pointsRef.current = [[pos.x, pos.y]];
+        
+        if (strokeSurfaceRef.current && canvasKit) {
+          const strokeCtx = strokeSurfaceRef.current.getCanvas();
+          strokeCtx.clear(canvasKit.Color4f(0, 0, 0, 0));
+          strokeSurfaceRef.current.flush();
+        }
+        
         canvasMonitor.log({ type: "mousedown", x: pos.x, y: pos.y, points: 1 });
         setDebugInfo((prev) => ({ ...prev, isDrawing: true, points: 1, lastX: pos.x, lastY: pos.y }));
       }
@@ -394,19 +441,29 @@ export default function UnifiedCanvas({
       
       if (!isDrawingRef.current || !lastPosRef.current || !paintRef.current) return;
       const pos = getCanvasPos(e);
+      
+      const lastPos = lastPosRef.current;
       pointsRef.current.push([pos.x, pos.y]);
 
-      const ctx = surfaceRef.current.getCanvas();
+      if (strokeSurfaceRef.current && strokePaintRef.current) {
+        const strokeCtx = strokeSurfaceRef.current.getCanvas();
+        strokeCtx.drawLine(lastPos.x, lastPos.y, pos.x, pos.y, strokePaintRef.current);
+        strokeSurfaceRef.current.flush();
+      }
 
+      const ctx = surfaceRef.current.getCanvas();
       ctx.clear(canvasKit.Color4f(30 / 255, 32 / 255, 38 / 255, 1.0));
+      
       if (bgImageRef.current) {
         ctx.drawImage(bgImageRef.current, 0, 0);
       }
-
-      for (let i = 0; i < pointsRef.current.length - 1; i++) {
-        const [x0, y0] = pointsRef.current[i];
-        const [x1, y1] = pointsRef.current[i + 1];
-        ctx.drawLine(x0, y0, x1, y1, paintRef.current);
+      
+      if (strokeSurfaceRef.current) {
+        const strokeImage = strokeSurfaceRef.current.makeImageSnapshot();
+        if (strokeImage) {
+          ctx.drawImage(strokeImage, 0, 0);
+          strokeImage.delete();
+        }
       }
 
       surfaceRef.current.flush();
@@ -471,14 +528,32 @@ export default function UnifiedCanvas({
 
       if (pointsRef.current.length > 1) {
         try {
-          const command: DrawCommand = {
-            tool,
-            points: pointsRef.current,
-            color: hexToRgb(color),
-            size: brushSize,
-            layerId: "current",
-          };
-          await drawStroke(command);
+          if (strokeSurfaceRef.current) {
+            const strokeImage = strokeSurfaceRef.current.makeImageSnapshot();
+            if (strokeImage) {
+              const pixels = strokeImage.readPixels(0, 0, {
+                width: DOC_WIDTH,
+                height: DOC_HEIGHT,
+                colorType: canvasKit.ColorType.RGBA_8888,
+                alphaType: canvasKit.AlphaType.Unpremul,
+                colorSpace: canvasKit.ColorSpace.SRGB,
+              });
+              
+              if (pixels) {
+                await applyStrokePixels(new Uint8Array(pixels));
+              }
+              strokeImage.delete();
+            }
+          } else {
+            const command: DrawCommand = {
+              tool,
+              points: pointsRef.current,
+              color: hexToRgb(color),
+              size: brushSize,
+              layerId: "current",
+            };
+            await drawStroke(command);
+          }
           window.dispatchEvent(new CustomEvent("retas:state-changed"));
         } catch (e) {
           console.error("Draw failed:", e);
@@ -488,7 +563,7 @@ export default function UnifiedCanvas({
       pointsRef.current = [];
       needsRefreshRef.current = true;
       setDebugInfo((prev) => ({ ...prev, isDrawing: false, points: 0 }));
-    }, [tool, selectionTool, selectionMode, currentSelectionRect, onSelectionChange, color, brushSize]);
+    }, [tool, selectionTool, selectionMode, currentSelectionRect, onSelectionChange, color, brushSize, canvasKit]);
 
   if (isLoading) {
     return (

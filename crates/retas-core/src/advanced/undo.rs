@@ -180,10 +180,10 @@ impl Command for StrokeCommand {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
                     if self.previous_pixel_data.is_empty() {
-                        self.previous_pixel_data = frame.image_data.clone();
+                        self.previous_pixel_data = frame.image_data.as_ref().clone();
                     }
                     if !self.stroke_data.is_empty() {
-                        frame.image_data = self.stroke_data.clone();
+                        frame.image_data = std::sync::Arc::new(self.stroke_data.clone());
                     }
                 }
             }
@@ -194,7 +194,7 @@ impl Command for StrokeCommand {
         if let Some(layer) = document.layers.get_mut(&self.layer_id) {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
-                    frame.image_data = self.previous_pixel_data.clone();
+                    frame.image_data = std::sync::Arc::new(self.previous_pixel_data.clone());
                 }
             }
         }
@@ -480,15 +480,16 @@ impl Command for FillCommand {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
                     if self.old_pixel_data.is_empty() {
-                        self.old_pixel_data = frame.image_data.clone();
+                        self.old_pixel_data = frame.image_data.as_ref().clone();
                     }
                     let color = self.fill_color;
-                    for i in (0..frame.image_data.len()).step_by(4) {
-                        if i + 3 < frame.image_data.len() {
-                            frame.image_data[i] = color.r;
-                            frame.image_data[i + 1] = color.g;
-                            frame.image_data[i + 2] = color.b;
-                            frame.image_data[i + 3] = color.a;
+                    let data = frame.get_image_data_mut();
+                    for i in (0..data.len()).step_by(4) {
+                        if i + 3 < data.len() {
+                            data[i] = color.r;
+                            data[i + 1] = color.g;
+                            data[i + 2] = color.b;
+                            data[i + 3] = color.a;
                         }
                     }
                 }
@@ -500,7 +501,7 @@ impl Command for FillCommand {
         if let Some(layer) = document.layers.get_mut(&self.layer_id) {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
-                    frame.image_data = self.old_pixel_data.clone();
+                    frame.image_data = std::sync::Arc::new(self.old_pixel_data.clone());
                 }
             }
         }
@@ -530,10 +531,10 @@ impl Command for FrameCommand {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&self.frame_number) {
                     if self.old_frame_data.is_none() {
-                        self.old_frame_data = Some(frame.image_data.clone());
+                        self.old_frame_data = Some(frame.image_data.as_ref().clone());
                     }
                     if let Some(ref data) = self.new_frame_data {
-                        frame.image_data = data.clone();
+                        frame.image_data = std::sync::Arc::new(data.clone());
                     }
                 }
                 raster.current_frame = self.frame_number;
@@ -546,7 +547,7 @@ impl Command for FrameCommand {
             if let crate::Layer::Raster(raster) = layer {
                 if let Some(frame) = raster.frames.get_mut(&self.frame_number) {
                     if let Some(ref data) = self.old_frame_data {
-                        frame.image_data = data.clone();
+                        frame.image_data = std::sync::Arc::new(data.clone());
                     }
                 }
                 raster.current_frame = self.frame_number;

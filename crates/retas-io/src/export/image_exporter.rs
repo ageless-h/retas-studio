@@ -217,7 +217,7 @@ impl ImageImporter {
         let mut layer = RasterLayer::new(name);
         let frame = retas_core::RasterFrame {
             frame_number: 0,
-            image_data: data,
+            image_data: std::sync::Arc::new(data),
             width,
             height,
             bounds: None,

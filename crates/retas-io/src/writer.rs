@@ -165,7 +165,7 @@ impl FileWriter for CelWriter {
                                 if frame.image_data.is_empty() {
                                     vec![255u8; pixel_count]
                                 } else {
-                                    frame.image_data.clone()
+                                    (*frame.image_data).clone()
                                 }
                             } else {
                                 vec![255u8; pixel_count]

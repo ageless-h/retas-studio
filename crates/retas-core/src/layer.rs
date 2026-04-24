@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub use uuid;
@@ -91,10 +92,37 @@ impl LayerBase {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RasterFrame {
     pub frame_number: u32,
-    pub image_data: Vec<u8>,
+    #[serde(with = "arc_vec")]
+    pub image_data: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
     pub bounds: Option<super::Rect>,
+}
+
+mod arc_vec {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::sync::Arc;
+
+    pub fn serialize<S>(arc: &Arc<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        arc.as_ref().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec = Vec::<u8>::deserialize(deserializer)?;
+        Ok(Arc::new(vec))
+    }
+}
+
+impl RasterFrame {
+    pub fn get_image_data_mut(&mut self) -> &mut Vec<u8> {
+        Arc::make_mut(&mut self.image_data)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

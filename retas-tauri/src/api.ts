@@ -72,6 +72,13 @@ export async function drawStroke(command: DrawCommand): Promise<string> {
   return safeInvoke("draw_stroke", { command });
 }
 
+export async function applyStrokePixels(strokePixels: Uint8Array): Promise<string> {
+  if (!isTauri) {
+    return Promise.resolve("Mock: stroke pixels applied");
+  }
+  return safeInvoke("apply_stroke_pixels", { strokePixels: Array.from(strokePixels) });
+}
+
 export async function getLayers(): Promise<LayerInfo[]> {
   if (!isTauri) return mockGetLayers();
   return safeInvoke<LayerInfo[]>("get_layers");

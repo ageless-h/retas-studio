@@ -415,7 +415,7 @@ impl Renderer {
             _ => return,
         };
 
-        let mut image_data = frame.image_data.clone();
+        let mut image_data = (*frame.image_data).clone();
         for pixel in image_data.chunks_exact_mut(4) {
             pixel[0] = (pixel[0] as f32 * tint.r as f32 / 255.0) as u8;
             pixel[1] = (pixel[1] as f32 * tint.g as f32 / 255.0) as u8;

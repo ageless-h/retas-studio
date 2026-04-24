@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use retas_core::{Document, Layer, RasterLayer, RasterFrame, History};
 
 pub struct AppState {
@@ -18,7 +18,7 @@ impl AppState {
 
         layer1.frames.insert(0, RasterFrame {
             frame_number: 0,
-            image_data: vec![255u8; (width * height * 4) as usize],
+            image_data: Arc::new(vec![255u8; (width * height * 4) as usize]),
             width,
             height,
             bounds: None,
@@ -26,7 +26,7 @@ impl AppState {
 
         layer2.frames.insert(0, RasterFrame {
             frame_number: 0,
-            image_data: vec![0u8; (width * height * 4) as usize],
+            image_data: Arc::new(vec![0u8; (width * height * 4) as usize]),
             width,
             height,
             bounds: None,

@@ -206,7 +206,7 @@ fn add_frame(state: State<Arc<AppState>>) -> Result<(), String> {
             if !raster.frames.contains_key(&new_frame) {
                 raster.frames.insert(new_frame, retas_core::RasterFrame {
                     frame_number: new_frame,
-                    image_data: vec![0u8; (width * height * 4) as usize],
+                    image_data: std::sync::Arc::new(vec![0u8; (width * height * 4) as usize]),
                     width,
                     height,
                     bounds: None,
@@ -308,14 +308,16 @@ fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<Stri
 
     let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
     let is_eraser = command.tool == "eraser";
+    let frame_width = frame.width;
+    let frame_height = frame.height;
 
     for window in command.points.windows(2) {
         let (x0, y0) = window[0];
         let (x1, y1) = window[1];
         draw_line_on_pixels(
-            &mut frame.image_data,
-            frame.width,
-            frame.height,
+            frame.get_image_data_mut(),
+            frame_width,
+            frame_height,
             x0, y0, x1, y1,
             command.color,
             command.size,
@@ -324,6 +326,71 @@ fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<Stri
     }
 
     Ok(format!("绘制了 {} 个点", command.points.len()))
+}
+
+#[tauri::command]
+fn apply_stroke_pixels(
+    stroke_pixels: Vec<u8>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+
+    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = doc.timeline.current_frame;
+
+    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support drawing".to_string()),
+    };
+
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let width = frame.width as usize;
+    let height = frame.height as usize;
+    let expected_len = width * height * 4;
+
+    if stroke_pixels.len() != expected_len {
+        return Err(format!(
+            "Pixel data size mismatch: expected {}, got {}",
+            expected_len,
+            stroke_pixels.len()
+        ));
+    }
+
+    let frame_data = frame.get_image_data_mut();
+
+    for (i, chunk) in stroke_pixels.chunks(4).enumerate() {
+        if chunk.len() < 4 {
+            continue;
+        }
+        let alpha = chunk[3] as f64 / 255.0;
+        if alpha > 0.0 {
+            let idx = i * 4;
+            let dst_alpha = frame_data[idx + 3] as f64 / 255.0;
+            
+            if chunk[3] == 0 {
+                continue;
+            }
+
+            if dst_alpha == 0.0 {
+                frame_data[idx] = chunk[0];
+                frame_data[idx + 1] = chunk[1];
+                frame_data[idx + 2] = chunk[2];
+                frame_data[idx + 3] = chunk[3];
+            } else {
+                let out_alpha = alpha + dst_alpha * (1.0 - alpha);
+                if out_alpha > 0.0 {
+                    frame_data[idx] = ((chunk[0] as f64 * alpha + frame_data[idx] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
+                    frame_data[idx + 1] = ((chunk[1] as f64 * alpha + frame_data[idx + 1] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
+                    frame_data[idx + 2] = ((chunk[2] as f64 * alpha + frame_data[idx + 2] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
+                    frame_data[idx + 3] = (out_alpha * 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    Ok("笔划已应用".to_string())
 }
 
 #[tauri::command]
@@ -339,7 +406,7 @@ fn get_layer_pixels(layer_id: String, state: State<Arc<AppState>>) -> Result<Vec
 
     let current_frame = doc.timeline.current_frame;
     let frame = raster.frames.get(&current_frame).ok_or("No frame data")?;
-    Ok(frame.image_data.clone())
+    Ok(frame.image_data.as_ref().clone())
 }
 
 #[tauri::command]
@@ -377,7 +444,7 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
             None => continue,
         };
 
-        layer_data.push(&frame.image_data);
+        layer_data.push(frame.image_data.as_ref());
         blend_modes.push(layer.base().blend_mode);
         opacities.push(layer.base().opacity);
     }
@@ -683,6 +750,86 @@ fn invert_selection(state: State<Arc<AppState>>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn update_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let tool = match selection.selection_type.as_str() {
+        "rect" => SelectionTool::Rectangular,
+        "ellipse" => SelectionTool::Elliptical,
+        "lasso" => SelectionTool::Lasso,
+        "magicWand" => SelectionTool::MagicWand,
+        _ => SelectionTool::Rectangular,
+    };
+    
+    let mode = match selection.mode.as_str() {
+        "replace" => RetasSelectionMode::Replace,
+        "add" => RetasSelectionMode::Add,
+        "subtract" => RetasSelectionMode::Subtract,
+        "intersect" => RetasSelectionMode::Intersect,
+        _ => RetasSelectionMode::Replace,
+    };
+    
+    let mask = if selection.selection_type == "lasso" {
+        let points: Vec<retas_core::Point> = selection.points.iter()
+            .map(|(x, y)| retas_core::Point::new(*x, *y))
+            .collect();
+        let bounds = calculate_points_bounds(&points);
+        SelectionMask::Lasso { points, bounds }
+    } else if let Some((x, y, w, h)) = selection.rect {
+        let rect = retas_core::Rect::new(x, y, w, h);
+        if selection.selection_type == "ellipse" {
+            SelectionMask::Elliptical { rect }
+        } else {
+            SelectionMask::Rectangular { rect }
+        }
+    } else {
+        SelectionMask::None
+    };
+    
+    let new_selection = Selection {
+        tool,
+        mode,
+        mask,
+        feather: selection.feather,
+        anti_aliased: true,
+        is_active: true,
+    };
+    
+    doc.selection = Some(new_selection);
+    Ok(())
+}
+
+#[tauri::command]
+fn apply_selection_to_layer(layer_id: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&layer_id)?;
+    record_history(&state)?;
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let selection = doc.selection.as_ref().ok_or("No active selection")?;
+    if !selection.is_active {
+        return Err("No active selection".to_string());
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+fn select_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&id)?;
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    if doc.layers.contains_key(&layer_id) {
+        doc.selected_layers.clear();
+        doc.selected_layers.push(layer_id);
+        Ok(())
+    } else {
+        Err("Layer not found".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -693,6 +840,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_document_info,
             draw_stroke,
+            apply_stroke_pixels,
             get_layer_pixels,
             composite_layers,
             get_layers,
@@ -700,6 +848,7 @@ pub fn run() {
             delete_layer,
             toggle_layer_visibility,
             toggle_layer_lock,
+            select_layer,
             get_frame_info,
             set_current_frame,
             add_frame,
@@ -716,10 +865,12 @@ pub fn run() {
             delete_frames,
             copy_frame,
             create_selection,
+            update_selection,
             clear_selection,
             get_selection,
             get_selection_bounds,
             invert_selection,
+            apply_selection_to_layer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
