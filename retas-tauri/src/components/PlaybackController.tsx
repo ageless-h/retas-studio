@@ -4,6 +4,7 @@ import {
   Play, Pause, SkipBack, SkipForward, 
   StepBack, StepForward, Repeat
 } from "lucide-react";
+import { setCurrentFrame as apiSetFrame } from "../api";
 
 interface PlaybackControllerProps {
   totalFrames: number;
@@ -31,6 +32,10 @@ export default function PlaybackController({
     if (onFrameChange) {
       onFrameChange(newFrame);
     }
+    // Sync with backend
+    apiSetFrame(newFrame).then(() => {
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    }).catch(() => {});
   };
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);

@@ -12,7 +12,11 @@ import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useCanvasKit } from "./hooks/useCanvasKit";
 import { useWorkspace } from "./hooks/useWorkspace";
-import { openDocument, saveDocument, undo, redo, canUndo, canRedo } from "./api";
+import {
+  openDocument, saveDocument, undo, redo, canUndo, canRedo,
+  getLayers, getXSheetData, toggleKeyframe, insertFrames, deleteFrames,
+  getFrameInfo, LayerInfo,
+} from "./api";
 import { showOpenDialog, showSaveDialog } from "./utils/fileDialog";
 import MemoryMonitor from "./components/MemoryMonitor";
 import ShortcutHelp from "./components/ShortcutHelp";
@@ -25,6 +29,7 @@ import PlaybackController from "./components/PlaybackController";
 import UnifiedCanvas from "./components/UnifiedCanvas";
 import { OnionSkinPanel, OnionSkinSettings } from "./components/OnionSkinPanel";
 import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPanel";
+import XSheetPanel from "./components/XSheetPanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand";
 
@@ -110,21 +115,55 @@ function TimelinePanel(props: IDockviewPanelProps<{ isPlaying?: boolean; onPlayT
   );
 }
 
-function AnimationPropsPanel() {
+function AnimationPropsPanel(props: IDockviewPanelProps<{
+  currentFrame?: number;
+  totalFrames?: number;
+  fps?: number;
+}>) {
+  const [frameInfo, setFrameInfo] = useState<{ current: number; total: number; fps: number }>({
+    current: props.params.currentFrame || 1,
+    total: props.params.totalFrames || 100,
+    fps: props.params.fps || 24,
+  });
+
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const info = await getFrameInfo();
+        setFrameInfo(info);
+      } catch {}
+    };
+    handler();
+    window.addEventListener("retas:state-changed", handler);
+    return () => window.removeEventListener("retas:state-changed", handler);
+  }, []);
+
+  useEffect(() => {
+    setFrameInfo(prev => ({
+      ...prev,
+      current: props.params.currentFrame || prev.current,
+      total: props.params.totalFrames || prev.total,
+      fps: props.params.fps || prev.fps,
+    }));
+  }, [props.params.currentFrame, props.params.totalFrames, props.params.fps]);
+
   return (
     <div style={{ padding: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: "#8b949e", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>动画属性</div>
       <div style={{ fontSize: 12, color: "#8b949e" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span>帧率</span><span style={{ color: "#e6edf3" }}>24 fps</span>
+          <span>帧率</span><span style={{ color: "#e6edf3" }}>{frameInfo.fps} fps</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span>总帧数</span><span style={{ color: "#e6edf3" }}>100</span>
+          <span>总帧数</span><span style={{ color: "#e6edf3" }}>{frameInfo.total}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>当前帧</span><span style={{ color: "#e6edf3" }}>1</span>
+          <span>当前帧</span><span style={{ color: "#e6edf3" }}>{frameInfo.current}</span>
         </div>
       </div>
+    </div>
+  );
+}
     </div>
   );
 }
@@ -135,6 +174,76 @@ function BlendModesPanel() {
       <div style={{ fontSize: 11, fontWeight: 600, color: "#8b949e", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>混合模式</div>
       <div style={{ fontSize: 12, color: "#8b949e" }}>正常 / 正片叠底 / 滤色 / 叠加</div>
     </div>
+  );
+}
+
+function XSheetWrapper(props: IDockviewPanelProps<{
+  currentFrame?: number;
+  totalFrames?: number;
+  onFrameChange?: (frame: number) => void;
+}>) {
+  const [layers, setLayers] = useState<LayerInfo[]>([]);
+  const [keyframes, setKeyframes] = useState<Map<string, Set<number>>>(new Map());
+
+  const loadData = useCallback(async () => {
+    try {
+      const [layerData, xsheet] = await Promise.all([getLayers(), getXSheetData()]);
+      setLayers(layerData);
+      const kfMap = new Map<string, Set<number>>();
+      for (const cell of xsheet) {
+        if (cell.hasKeyframe) {
+          if (!kfMap.has(cell.layerId)) kfMap.set(cell.layerId, new Set());
+          kfMap.get(cell.layerId)!.add(cell.frame);
+        }
+      }
+      setKeyframes(kfMap);
+    } catch (e) {
+      console.error("XSheet load failed:", e);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener("retas:state-changed", handler);
+    return () => window.removeEventListener("retas:state-changed", handler);
+  }, [loadData]);
+
+  const handleKeyframeToggle = async (layerId: string, frame: number) => {
+    try {
+      await toggleKeyframe(layerId, frame);
+      await loadData();
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) { console.error(e); }
+  };
+
+  const handleFrameInsert = async (frame: number) => {
+    try {
+      await insertFrames(frame, 1);
+      await loadData();
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) { console.error(e); }
+  };
+
+  const handleFrameDelete = async (frame: number) => {
+    try {
+      await deleteFrames(frame, 1);
+      await loadData();
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <XSheetPanel
+      layers={layers}
+      currentFrame={props.params.currentFrame || 1}
+      totalFrames={props.params.totalFrames || 100}
+      keyframes={keyframes}
+      onFrameSelect={props.params.onFrameChange || (() => {})}
+      onKeyframeToggle={handleKeyframeToggle}
+      onFrameInsert={handleFrameInsert}
+      onFrameDelete={handleFrameDelete}
+    />
   );
 }
 
@@ -152,6 +261,7 @@ const components = {
   timeline: TimelinePanel,
   animationProps: AnimationPropsPanel,
   blendModes: BlendModesPanel,
+  xsheet: XSheetWrapper,
 };
 
 function App() {
@@ -308,6 +418,14 @@ function App() {
         component: "animationProps",
         title: "动画属性",
         position: { referencePanel: "canvas", direction: "right" },
+        params: { currentFrame, totalFrames, fps },
+      });
+      api.addPanel({
+        id: "xsheet",
+        component: "xsheet",
+        title: "X-Sheet",
+        position: { referencePanel: "animationProps", direction: "below" },
+        params: { currentFrame, totalFrames, onFrameChange: (frame: number) => setCurrentFrame(frame) },
       });
     } else if (workspace === "coloring") {
       api.addPanel({
@@ -363,10 +481,23 @@ function App() {
     }
   }, [brushColor, brushSize]);
 
+  const updateAnimationPanels = useCallback(() => {
+    if (!apiRef.current) return;
+    const xsheetPanel = apiRef.current.getPanel("xsheet");
+    if (xsheetPanel) {
+      xsheetPanel.api.updateParameters({ currentFrame, totalFrames, onFrameChange: (frame: number) => setCurrentFrame(frame) });
+    }
+    const animPropsPanel = apiRef.current.getPanel("animationProps");
+    if (animPropsPanel) {
+      animPropsPanel.api.updateParameters({ currentFrame, totalFrames, fps });
+    }
+  }, [currentFrame, totalFrames, fps]);
+
   useEffect(() => {
     updateCanvas();
     updateColorPanel();
-  }, [updateCanvas, updateColorPanel]);
+    updateAnimationPanels();
+  }, [updateCanvas, updateColorPanel, updateAnimationPanels]);
 
   useEffect(() => {
     if (!apiRef.current) return;

@@ -1,15 +1,20 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
 import { Button, ButtonGroup } from "@blueprintjs/core";
 import {
   ClientSideRowModelModule,
   ModuleRegistry,
   type ColDef,
-  type RowClassParams
+  type RowClassParams,
+  type CellClickedEvent,
 } from "ag-grid-community";
 import {
   Play, Pause, SkipBack, SkipForward, Plus, Trash2
 } from "lucide-react";
-import { getFrameInfo, setCurrentFrame, addFrame, deleteFrame, FrameInfo } from "../api";
+import {
+  getFrameInfo, setCurrentFrame, addFrame, deleteFrame,
+  getXSheetData, getLayers, toggleKeyframe,
+  FrameInfo, XSheetCell, LayerInfo,
+} from "../api";
 
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
@@ -29,18 +34,67 @@ interface TimelineProps {
 interface TimelineRow {
   layerName: string;
   layerId: string;
-  [key: string]: any;
+  [key: string]: string;
 }
 
 export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalFrames, onFrameChange }: TimelineProps) {
   const [frameInfo, setFrameInfo] = useState<FrameInfo>({ current: currentFrame, total: totalFrames, fps: 24 });
   const [rowData, setRowData] = useState<TimelineRow[]>([]);
+  const [displayFrames, setDisplayFrames] = useState(24);
   const gridRef = useRef<any>(null);
 
-  useEffect(() => {
-    loadFrameInfo();
-    generateTimelineData();
+  const loadData = useCallback(async () => {
+    try {
+      const [info, layers, xsheet] = await Promise.all([
+        getFrameInfo(),
+        getLayers(),
+        getXSheetData(),
+      ]);
+
+      setFrameInfo(info);
+      const frameCount = Math.max(info.total, 24);
+      setDisplayFrames(frameCount);
+
+      // Build a lookup: layerId -> Set<frame>
+      const keyframeMap = new Map<string, Set<number>>();
+      for (const cell of xsheet) {
+        if (cell.hasKeyframe) {
+          if (!keyframeMap.has(cell.layerId)) {
+            keyframeMap.set(cell.layerId, new Set());
+          }
+          keyframeMap.get(cell.layerId)!.add(cell.frame);
+        }
+      }
+
+      // Build rows from real layer data
+      const rows: TimelineRow[] = layers.map((layer: LayerInfo) => {
+        const row: TimelineRow = {
+          layerName: layer.name,
+          layerId: layer.id,
+        };
+        const layerKeys = keyframeMap.get(layer.id);
+        for (let f = 1; f <= frameCount; f++) {
+          row[`frame_${f}`] = layerKeys?.has(f) ? "key" : "";
+        }
+        return row;
+      });
+
+      setRowData(rows);
+    } catch (e) {
+      console.error("Failed to load timeline data:", e);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Auto-refresh on state changes
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener("retas:state-changed", handler);
+    return () => window.removeEventListener("retas:state-changed", handler);
+  }, [loadData]);
 
   useEffect(() => {
     setFrameInfo(prev => ({
@@ -50,37 +104,12 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
     }));
   }, [currentFrame, totalFrames]);
 
-  const loadFrameInfo = async () => {
-    try {
-      const info = await getFrameInfo();
-      setFrameInfo(info);
-    } catch (e) {
-      console.error("Failed to load frame info:", e);
-    }
-  };
-
-  const generateTimelineData = () => {
-    const rows: TimelineRow[] = [
-      { layerName: "背景", layerId: "bg" },
-      { layerName: "图层 1", layerId: "layer1" },
-      { layerName: "图层 2", layerId: "layer2" },
-    ];
-    
-    // Add frame cells
-    for (let i = 1; i <= 24; i++) {
-      rows.forEach(row => {
-        row[`frame_${i}`] = i % 3 === 0 ? "key" : "";
-      });
-    }
-    
-    setRowData(rows);
-  };
-
   const handleFrameChange = async (frame: number) => {
     try {
       await setCurrentFrame(frame);
       setFrameInfo(prev => ({ ...prev, current: frame }));
       onFrameChange(frame);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
     } catch (e) {
       console.error(e);
     }
@@ -89,7 +118,7 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
   const handleAddFrame = async () => {
     try {
       await addFrame();
-      await loadFrameInfo();
+      await loadData();
     } catch (e) {
       console.error(e);
     }
@@ -98,31 +127,54 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
   const handleDeleteFrame = async () => {
     try {
       await deleteFrame();
-      await loadFrameInfo();
+      await loadData();
     } catch (e) {
       console.error(e);
     }
   };
 
+  const handleCellDoubleClick = async (event: CellClickedEvent) => {
+    const field = event.colDef.field;
+    if (!field || !field.startsWith("frame_")) return;
+    const frame = parseInt(field.replace("frame_", ""), 10);
+    const layerId = event.data?.layerId;
+    if (!layerId || isNaN(frame)) return;
+
+    try {
+      await toggleKeyframe(layerId, frame);
+      await loadData();
+    } catch (e) {
+      console.error("Toggle keyframe failed:", e);
+    }
+  };
+
   const columnDefs: ColDef[] = [
-    { 
-      field: "layerName", 
-      headerName: "图层", 
-      width: 120, 
+    {
+      field: "layerName",
+      headerName: "图层",
+      width: 120,
       pinned: "left",
-      cellStyle: { background: "#2d2d30", color: "#e0e0e0" }
+      cellStyle: { background: "#2d2d30", color: "#e0e0e0" },
     },
-    ...Array.from({ length: 24 }, (_, i) => ({
-      field: `frame_${i + 1}`,
-      headerName: `${i + 1}`,
-      width: 28,
-      cellStyle: (params: any) => ({
-        background: params.value === "key" ? "#094771" : "#1e1e1e",
-        color: "#e0e0e0",
-        textAlign: "center",
-        border: "1px solid #333",
-      }),
-    })),
+    ...Array.from({ length: displayFrames }, (_, i) => {
+      const frameNum = i + 1;
+      const isCurrent = frameNum === currentFrame;
+      return {
+        field: `frame_${frameNum}`,
+        headerName: `${frameNum}`,
+        width: 28,
+        cellStyle: (params: any) => ({
+          background: isCurrent
+            ? "rgba(31, 111, 235, 0.25)"
+            : params.value === "key"
+              ? "#094771"
+              : "#1e1e1e",
+          color: "#e0e0e0",
+          textAlign: "center" as const,
+          border: "1px solid #333",
+        }),
+      };
+    }),
   ];
 
   const getRowClass = (params: RowClassParams) => {
@@ -135,8 +187,8 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
       <ButtonGroup>
         <Button minimal data-testid="frame-first" icon={<SkipBack size={14} />} onClick={() => handleFrameChange(1)}>起始</Button>
         <Button minimal data-testid="frame-prev" icon={<SkipBack size={14} />} onClick={() => handleFrameChange(Math.max(1, frameInfo.current - 1))}>上一帧</Button>
-        <Button 
-          minimal 
+        <Button
+          minimal
           data-testid="playback-toggle"
           icon={isPlaying ? <Pause size={14} /> : <Play size={14} />}
           onClick={onPlayToggle}
@@ -145,7 +197,7 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
         </Button>
         <Button minimal data-testid="frame-next" icon={<SkipForward size={14} />} onClick={() => handleFrameChange(Math.min(frameInfo.total, frameInfo.current + 1))}>下一帧</Button>
       </ButtonGroup>
-      
+
       <div style={{ flex: 1, overflow: "hidden" }}>
         <div className="ag-theme-alpine-dark" style={{ height: 80, width: "100%" }}>
           <Suspense fallback={<div style={{ color: "#888", fontSize: 12 }}>加载中...</div>}>
@@ -159,11 +211,12 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
               rowHeight={28}
               suppressCellFocus={true}
               domLayout="autoHeight"
+              onCellDoubleClicked={handleCellDoubleClick}
             />
           </Suspense>
         </div>
       </div>
-      
+
       <div style={{ display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap" }}>
         <span data-testid="frame-counter" style={{ fontSize: 12, color: "#888" }}>
           帧: {frameInfo.current} / {frameInfo.total} | {frameInfo.fps} 帧/秒
