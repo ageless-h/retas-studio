@@ -490,10 +490,27 @@ impl Command for FillCommand {
                     if let Some(ref selection) = self.selection {
                         if selection.is_active {
                             let bitmap = selection.to_bitmap();
-                            if let crate::advanced::selection::SelectionMask::Bitmap { data: mask_data, .. } = bitmap {
-                                for (i, &alpha) in mask_data.iter().enumerate() {
-                                    if alpha > 0 {
-                                        let idx = i * 4;
+                            if let crate::advanced::selection::SelectionMask::Bitmap { data: mask_data, width: mask_w, height: mask_h } = bitmap {
+                                let sel_bounds = selection.bounds().unwrap_or(crate::Rect::ZERO);
+                                let offset_x = sel_bounds.origin.x.floor() as isize;
+                                let offset_y = sel_bounds.origin.y.floor() as isize;
+                                let mask_w = mask_w as usize;
+                                let mask_h = mask_h as usize;
+                                let frame_w = width as usize;
+                                let frame_h = height as usize;
+                                
+                                for by in 0..mask_h {
+                                    for bx in 0..mask_w {
+                                        let mask_idx = by * mask_w + bx;
+                                        if mask_idx >= mask_data.len() || mask_data[mask_idx] == 0 {
+                                            continue;
+                                        }
+                                        let fx = bx as isize + offset_x;
+                                        let fy = by as isize + offset_y;
+                                        if fx < 0 || fy < 0 || fx >= frame_w as isize || fy >= frame_h as isize {
+                                            continue;
+                                        }
+                                        let idx = (fy as usize * frame_w + fx as usize) * 4;
                                         if idx + 3 < data.len() {
                                             data[idx] = color.r;
                                             data[idx + 1] = color.g;

@@ -35,26 +35,45 @@ impl ImageExporter {
         path: &std::path::Path,
         options: &ImageExportOptions,
     ) -> Result<(), ExportError> {
-        let (width, height) = if let Some(frame) = layer.frames.get(&layer.current_frame) {
-            (frame.width.max(1), frame.height.max(1))
-        } else {
-            (640, 480)
-        };
-        let width = options.width.unwrap_or(width);
-        let height = options.height.unwrap_or(height);
+        let frame_number = layer.current_frame;
+        let frame = layer.frames.get(&frame_number)
+            .ok_or_else(|| ExportError::InvalidDocument(
+                format!("Frame {} not found in layer", frame_number)
+            ))?;
         
-        let mut buffer = vec![0u8; (width * height * 4) as usize];
+        let src_width = frame.width;
+        let src_height = frame.height;
+        let out_width = options.width.unwrap_or(src_width);
+        let out_height = options.height.unwrap_or(src_height);
         
-        if let Some(bg) = options.background {
-            for pixel in buffer.chunks_exact_mut(4) {
+        let mut buffer = if let Some(bg) = options.background {
+            let mut buf = vec![0u8; (out_width * out_height * 4) as usize];
+            for pixel in buf.chunks_exact_mut(4) {
                 pixel[0] = bg.r;
                 pixel[1] = bg.g;
                 pixel[2] = bg.b;
                 pixel[3] = bg.a;
             }
+            buf
+        } else {
+            vec![0u8; (out_width * out_height * 4) as usize]
+        };
+        
+        // Copy frame pixel data into the output buffer
+        let src_data = frame.image_data.as_ref();
+        let copy_w = src_width.min(out_width) as usize;
+        let copy_h = src_height.min(out_height) as usize;
+        for y in 0..copy_h {
+            let src_offset = y * src_width as usize * 4;
+            let dst_offset = y * out_width as usize * 4;
+            let row_bytes = copy_w * 4;
+            if src_offset + row_bytes <= src_data.len() && dst_offset + row_bytes <= buffer.len() {
+                buffer[dst_offset..dst_offset + row_bytes]
+                    .copy_from_slice(&src_data[src_offset..src_offset + row_bytes]);
+            }
         }
 
-        let img = image::RgbaImage::from_raw(width, height, buffer)
+        let img = image::RgbaImage::from_raw(out_width, out_height, buffer)
             .ok_or_else(|| ExportError::InvalidDocument("Failed to create image buffer".to_string()))?;
 
         Self::save_image(&img, path, options)
@@ -109,13 +128,13 @@ impl ImageExporter {
         width: u32,
         height: u32,
         layer: &Layer,
-        _frame: u32,
+        frame: u32,
     ) {
         let opacity = layer.base().opacity;
         
         match layer {
             Layer::Raster(raster) => {
-                if let Some(frame_data) = raster.frames.get(&raster.current_frame) {
+                if let Some(frame_data) = raster.frames.get(&frame) {
                     let layer_width = frame_data.width;
                     let layer_height = frame_data.height;
                     let offset_x = frame_data.bounds.as_ref().map(|b| b.origin.x as i32).unwrap_or(0);

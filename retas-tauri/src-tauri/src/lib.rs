@@ -901,21 +901,36 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
     };
     
     let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
-    let _width = frame.width;
-    let _height = frame.height;
+    let frame_width = frame.width as usize;
+    let frame_height = frame.height as usize;
     let pixels = frame.get_image_data_mut();
     
     let bitmap = selection.to_bitmap();
-    let mask_data = match &bitmap {
-        SelectionMask::Bitmap { data, .. } => data.clone(),
+    let (mask_data, mask_width, mask_height) = match &bitmap {
+        SelectionMask::Bitmap { data, width, height } => (data.clone(), *width as usize, *height as usize),
         _ => return Err("Failed to convert selection to bitmap".to_string()),
     };
     
+    // Selection bitmap origin: the bitmap is sized to selection bounds,
+    // so bitmap pixel (bx, by) maps to frame pixel (bx + offset_x, by + offset_y)
+    let sel_bounds = selection.bounds().unwrap_or(retas_core::Rect::ZERO);
+    let offset_x = sel_bounds.origin.x.floor() as isize;
+    let offset_y = sel_bounds.origin.y.floor() as isize;
+    
     match operation.as_str() {
         "clear" => {
-            for (i, &alpha) in mask_data.iter().enumerate() {
-                if alpha > 0 {
-                    let idx = i * 4;
+            for by in 0..mask_height {
+                for bx in 0..mask_width {
+                    let mask_idx = by * mask_width + bx;
+                    if mask_idx >= mask_data.len() || mask_data[mask_idx] == 0 {
+                        continue;
+                    }
+                    let fx = bx as isize + offset_x;
+                    let fy = by as isize + offset_y;
+                    if fx < 0 || fy < 0 || fx >= frame_width as isize || fy >= frame_height as isize {
+                        continue;
+                    }
+                    let idx = (fy as usize * frame_width + fx as usize) * 4;
                     if idx + 3 < pixels.len() {
                         pixels[idx] = 0;
                         pixels[idx + 1] = 0;
@@ -926,9 +941,18 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
             }
         }
         "fill" => {
-            for (i, &alpha) in mask_data.iter().enumerate() {
-                if alpha > 0 {
-                    let idx = i * 4;
+            for by in 0..mask_height {
+                for bx in 0..mask_width {
+                    let mask_idx = by * mask_width + bx;
+                    if mask_idx >= mask_data.len() || mask_data[mask_idx] == 0 {
+                        continue;
+                    }
+                    let fx = bx as isize + offset_x;
+                    let fy = by as isize + offset_y;
+                    if fx < 0 || fy < 0 || fx >= frame_width as isize || fy >= frame_height as isize {
+                        continue;
+                    }
+                    let idx = (fy as usize * frame_width + fx as usize) * 4;
                     if idx + 3 < pixels.len() {
                         pixels[idx] = 255;
                         pixels[idx + 1] = 255;
@@ -939,12 +963,23 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
             }
         }
         "invert" => {
-            for (i, &alpha) in mask_data.iter().enumerate() {
-                if alpha > 0 {
-                    let idx = i * 4;
+            for by in 0..mask_height {
+                for bx in 0..mask_width {
+                    let mask_idx = by * mask_width + bx;
+                    if mask_idx >= mask_data.len() || mask_data[mask_idx] == 0 {
+                        continue;
+                    }
+                    let fx = bx as isize + offset_x;
+                    let fy = by as isize + offset_y;
+                    if fx < 0 || fy < 0 || fx >= frame_width as isize || fy >= frame_height as isize {
+                        continue;
+                    }
+                    let idx = (fy as usize * frame_width + fx as usize) * 4;
                     if idx + 3 < pixels.len() {
-                        let current_alpha = pixels[idx + 3];
-                        pixels[idx + 3] = 255 - current_alpha;
+                        pixels[idx] = 255 - pixels[idx];
+                        pixels[idx + 1] = 255 - pixels[idx + 1];
+                        pixels[idx + 2] = 255 - pixels[idx + 2];
+                        pixels[idx + 3] = 255 - pixels[idx + 3];
                     }
                 }
             }

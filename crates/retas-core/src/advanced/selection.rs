@@ -525,12 +525,11 @@ impl MagicWandSelector {
         selected
     }
 
-    fn color_distance(r1: u8, g1: u8, b1: u8, a1: u8, r2: u8, g2: u8, b2: u8, a2: u8) -> f64 {
+    fn color_distance(r1: u8, g1: u8, b1: u8, _a1: u8, r2: u8, g2: u8, b2: u8, _a2: u8) -> f64 {
         let dr = (r1 as i32 - r2 as i32).abs() as f64;
         let dg = (g1 as i32 - g2 as i32).abs() as f64;
         let db = (b1 as i32 - b2 as i32).abs() as f64;
-        let da = (a1 as i32 - a2 as i32).abs() as f64;
         
-        (dr * dr + dg * dg + db * db + da * da).sqrt()
+        (dr * dr + dg * dg + db * db).sqrt()
     }
 }

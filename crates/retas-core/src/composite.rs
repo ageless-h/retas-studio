@@ -208,6 +208,12 @@ pub fn composite_layers(
     height: u32,
 ) -> Vec<u8> {
     let pixel_count = (width * height * 4) as usize;
+    
+    if layers.is_empty() {
+        // No visible layers: return fully transparent
+        return vec![0u8; pixel_count];
+    }
+    
     let mut buffer_a = vec![0u8; pixel_count];
     let mut buffer_b = vec![0u8; pixel_count];
     let mut use_a_as_result = true;

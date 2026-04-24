@@ -3,6 +3,7 @@ use retas_core::{
     Color8, BlendMode, Point, LayerId, LayerType, composite_layers, fill_rect, draw_circle,
 };
 use retas_core::advanced::{BrushSettings, BrushType, BrushBlendMode};
+use std::sync::Arc;
 
 mod common;
 use common::fixtures::{create_test_document, create_test_raster_layer, create_test_vector_layer, pixel_color_at};
@@ -50,7 +51,7 @@ fn test_raster_layer_draw_and_composite() {
 
     let frame = RasterFrame {
         frame_number: 0,
-        image_data: pixels.clone(),
+        image_data: Arc::new(pixels.clone()),
         width,
         height,
         bounds: Some(retas_core::Rect::new(0.0, 0.0, width as f64, height as f64)),
@@ -126,7 +127,7 @@ fn test_document_json_save_and_load() {
         Color8::new(255, 128, 64, 255));
     raster.frames.insert(0, RasterFrame {
         frame_number: 0,
-        image_data: pixels,
+        image_data: Arc::new(pixels),
         width,
         height,
         bounds: None,
@@ -232,7 +233,7 @@ fn test_composite_document_layers() {
         Color8::new(255, 0, 0, 255));
     raster1.frames.insert(0, RasterFrame {
         frame_number: 0,
-        image_data: pixels1,
+        image_data: Arc::new(pixels1),
         width,
         height,
         bounds: None,
@@ -247,7 +248,7 @@ fn test_composite_document_layers() {
         Color8::new(0, 0, 255, 255));
     raster2.frames.insert(0, RasterFrame {
         frame_number: 0,
-        image_data: pixels2,
+        image_data: Arc::new(pixels2),
         width,
         height,
         bounds: None,
