@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button, Slider } from "@blueprintjs/core";
-import { Eye, EyeOff, Lock, Unlock, Plus, Trash2, GripVertical } from "lucide-react";
+import { Eye, EyeOff, Lock, Unlock, Plus, Trash2, GripVertical, Copy } from "lucide-react";
 import {
   getLayers, addLayer, deleteLayer, toggleLayerVisibility,
   toggleLayerLock, selectLayer, renameLayer, setLayerOpacity, moveLayer,
+  duplicateLayer,
   LayerInfo,
 } from "../api";
 
@@ -89,6 +90,18 @@ export default function LayerPanel() {
       await loadLayers();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDuplicateLayer = async () => {
+    try {
+      const newLayer = await duplicateLayer(activeLayer);
+      await loadLayers();
+      setActiveLayer(newLayer.id);
+      selectLayer(newLayer.id);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("复制图层失败:", e);
     }
   };
 
@@ -287,6 +300,7 @@ export default function LayerPanel() {
 
       <div style={{ padding: 8, display: "flex", gap: 4 }}>
         <Button minimal small data-testid="layer-add" icon={<Plus size={14} />} onClick={handleAddLayer}>新建</Button>
+        <Button minimal small data-testid="layer-duplicate" icon={<Copy size={14} />} onClick={handleDuplicateLayer} title="复制图层">复制</Button>
         <Button minimal small data-testid="layer-delete" icon={<Trash2 size={14} />} onClick={handleDeleteLayer}>删除</Button>
       </div>
     </div>

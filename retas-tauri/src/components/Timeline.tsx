@@ -8,11 +8,11 @@ import {
   type CellClickedEvent,
 } from "ag-grid-community";
 import {
-  Play, Pause, SkipBack, SkipForward, Plus, Trash2
+  Play, Pause, SkipBack, SkipForward, Plus, Trash2, Copy, ClipboardPaste
 } from "lucide-react";
 import {
   getFrameInfo, setCurrentFrame, addFrame, deleteFrame,
-  getXSheetData, getLayers, toggleKeyframe,
+  getXSheetData, getLayers, toggleKeyframe, copyFrame,
   FrameInfo, XSheetCell, LayerInfo,
 } from "../api";
 
@@ -41,6 +41,7 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
   const [frameInfo, setFrameInfo] = useState<FrameInfo>({ current: currentFrame, total: totalFrames, fps: 24 });
   const [rowData, setRowData] = useState<TimelineRow[]>([]);
   const [displayFrames, setDisplayFrames] = useState(24);
+  const [copiedFrame, setCopiedFrame] = useState<{ layerId: string; frame: number } | null>(null);
   const gridRef = useRef<any>(null);
 
   const loadData = useCallback(async () => {
@@ -148,6 +149,24 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
     }
   };
 
+  const handleCopyFrame = () => {
+    // Copy current frame for the first layer (or active layer context)
+    if (rowData.length > 0) {
+      setCopiedFrame({ layerId: rowData[0].layerId, frame: frameInfo.current });
+    }
+  };
+
+  const handlePasteFrame = async () => {
+    if (!copiedFrame) return;
+    try {
+      await copyFrame(copiedFrame.layerId, copiedFrame.frame, frameInfo.current);
+      await loadData();
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("Paste frame failed:", e);
+    }
+  };
+
   const columnDefs: ColDef[] = [
     {
       field: "layerName",
@@ -224,6 +243,8 @@ export default function Timeline({ isPlaying, onPlayToggle, currentFrame, totalF
         <ButtonGroup>
           <Button minimal data-testid="frame-add" icon={<Plus size={14} />} onClick={handleAddFrame}>增加帧</Button>
           <Button minimal data-testid="frame-delete" icon={<Trash2 size={14} />} onClick={handleDeleteFrame}>删除帧</Button>
+          <Button minimal data-testid="frame-copy" icon={<Copy size={14} />} onClick={handleCopyFrame} title="复制当前帧">复制</Button>
+          <Button minimal data-testid="frame-paste" icon={<ClipboardPaste size={14} />} onClick={handlePasteFrame} disabled={!copiedFrame} title="粘贴帧到当前位置">粘贴</Button>
         </ButtonGroup>
       </div>
     </div>

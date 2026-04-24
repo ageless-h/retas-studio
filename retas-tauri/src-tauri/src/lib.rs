@@ -1123,6 +1123,130 @@ fn set_layer_blend_mode(id: String, blend_mode: String, state: State<Arc<AppStat
 }
 
 #[tauri::command]
+fn new_document(name: String, width: f64, height: f64, fps: f64, total_frames: u32, state: State<Arc<AppState>>) -> Result<DocumentInfo, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    
+    let mut doc = retas_core::Document::new(&name, width, height);
+    doc.settings.frame_rate = fps;
+    doc.settings.total_frames = total_frames;
+    doc.timeline.frame_rate = fps;
+    doc.timeline.end_frame = total_frames;
+    
+    let w = width as u32;
+    let h = height as u32;
+    
+    let mut bg_layer = retas_core::RasterLayer::new("背景");
+    bg_layer.frames.insert(0, retas_core::RasterFrame {
+        frame_number: 0,
+        image_data: std::sync::Arc::new(vec![255u8; (w * h * 4) as usize]),
+        width: w,
+        height: h,
+        bounds: None,
+    });
+    
+    let mut draw_layer = retas_core::RasterLayer::new("图层 1");
+    draw_layer.frames.insert(0, retas_core::RasterFrame {
+        frame_number: 0,
+        image_data: std::sync::Arc::new(vec![0u8; (w * h * 4) as usize]),
+        width: w,
+        height: h,
+        bounds: None,
+    });
+    
+    let bg_id = bg_layer.base.id;
+    let draw_id = draw_layer.base.id;
+    
+    doc.layers.insert(bg_id, RetasLayer::Raster(bg_layer));
+    doc.layers.insert(draw_id, RetasLayer::Raster(draw_layer));
+    doc.timeline.layer_order.push(bg_id);
+    doc.timeline.layer_order.push(draw_id);
+    doc.selected_layers.push(draw_id);
+    
+    editor.document = doc;
+    editor.undo_manager.clear();
+    
+    Ok(DocumentInfo {
+        name: editor.document.settings.name.clone(),
+        width: editor.document.settings.resolution.width,
+        height: editor.document.settings.resolution.height,
+        frame_rate: editor.document.settings.frame_rate,
+        total_frames: editor.document.settings.total_frames,
+    })
+}
+
+#[tauri::command]
+fn duplicate_layer(id: String, state: State<Arc<AppState>>) -> Result<LayerInfo, String> {
+    let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    
+    let src_layer = editor.document.layers.get(&layer_id)
+        .ok_or("Layer not found")?
+        .clone();
+    
+    let src_base = src_layer.base();
+    let new_name = format!("{} (副本)", src_base.name);
+    
+    // Create a deep copy with new ID
+    let new_layer = match src_layer {
+        RetasLayer::Raster(mut r) => {
+            r.base = retas_core::LayerBase {
+                id: retas_core::LayerId(retas_core::uuid::Uuid::new_v4()),
+                name: new_name.clone(),
+                visible: r.base.visible,
+                locked: false,
+                opacity: r.base.opacity,
+                blend_mode: r.base.blend_mode,
+                layer_type: r.base.layer_type,
+            };
+            // Deep copy frame data
+            for frame in r.frames.values_mut() {
+                frame.image_data = std::sync::Arc::new(frame.image_data.as_ref().clone());
+            }
+            RetasLayer::Raster(r)
+        }
+        RetasLayer::Vector(mut v) => {
+            v.base = retas_core::LayerBase {
+                id: retas_core::LayerId(retas_core::uuid::Uuid::new_v4()),
+                name: new_name.clone(),
+                visible: v.base.visible,
+                locked: false,
+                opacity: v.base.opacity,
+                blend_mode: v.base.blend_mode,
+                layer_type: v.base.layer_type,
+            };
+            RetasLayer::Vector(v)
+        }
+        other => other,
+    };
+    
+    let new_base = new_layer.base().clone();
+    let new_id = new_base.id;
+    
+    // Insert after the source layer
+    let src_index = editor.document.timeline.layer_order.iter()
+        .position(|x| *x == layer_id)
+        .unwrap_or(editor.document.timeline.layer_order.len());
+    
+    let cmd = LayerAddCommand {
+        layer: new_layer,
+        index: src_index + 1,
+        description: format!("复制图层: {}", new_name),
+    };
+    
+    editor.undo_manager.execute(Box::new(cmd), &mut editor.document);
+    
+    Ok(LayerInfo {
+        id: new_id.0.to_string(),
+        name: new_base.name,
+        visible: new_base.visible,
+        locked: new_base.locked,
+        opacity: new_base.opacity,
+        layer_type: format!("{:?}", new_base.layer_type),
+        blend_mode: format!("{:?}", new_base.blend_mode).to_lowercase(),
+    })
+}
+
+#[tauri::command]
 fn export_image(
     output_path: String,
     format: String,
@@ -1224,6 +1348,8 @@ pub fn run() {
             set_layer_opacity,
             move_layer,
             set_layer_blend_mode,
+            new_document,
+            duplicate_layer,
             export_image,
             export_frame_sequence,
         ])

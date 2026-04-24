@@ -139,6 +139,16 @@ export async function setLayerBlendMode(id: string, blendMode: string): Promise<
   return safeInvoke("set_layer_blend_mode", { id, blendMode });
 }
 
+export async function newDocument(name: string, width: number, height: number, fps: number, totalFrames: number): Promise<DocumentInfo> {
+  if (!isTauri) return { name, width, height, frame_rate: fps, total_frames: totalFrames };
+  return safeInvoke<DocumentInfo>("new_document", { name, width, height, fps, totalFrames });
+}
+
+export async function duplicateLayer(id: string): Promise<LayerInfo> {
+  if (!isTauri) return { id: "mock", name: "Copy", visible: true, locked: false, opacity: 1.0 };
+  return safeInvoke<LayerInfo>("duplicate_layer", { id });
+}
+
 export async function getFrameInfo(): Promise<FrameInfo> {
   if (!isTauri) return mockGetFrameInfo();
   const info = await safeInvoke<FrameInfo>("get_frame_info");

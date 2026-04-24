@@ -21,6 +21,7 @@ import { showOpenDialog, showSaveDialog } from "./utils/fileDialog";
 import MemoryMonitor from "./components/MemoryMonitor";
 import ShortcutHelp from "./components/ShortcutHelp";
 import { ExportButton } from "./components/ExportDialog";
+import NewDocumentDialog from "./components/NewDocumentDialog";
 
 import LayerPanel from "./components/LayerPanel";
 import ColorPanel from "./components/ColorPanel";
@@ -378,6 +379,7 @@ function App() {
   const [selectionData, setSelectionData] = useState<SelectionData | null>(null);
   const [selectionTool, setSelectionTool] = useState<"rect" | "ellipse" | "lasso" | "magicWand">("rect");
   const [selectionMode, setSelectionMode] = useState<"replace" | "add" | "subtract" | "intersect">("replace");
+  const [newDocDialogOpen, setNewDocDialogOpen] = useState(false);
 
   const visibleTools = allTools.filter(t => visibleToolIds.has(t.id));
 
@@ -680,7 +682,7 @@ function App() {
     <div className="app-container">
       <div className="toolbar" style={{ height: 40, borderBottom: "1px solid #2d3139", flexShrink: 0 }}>
         <ButtonGroup minimal>
-          <Button small icon={<FilePlus size={14} />}>新建</Button>
+          <Button small icon={<FilePlus size={14} />} onClick={() => setNewDocDialogOpen(true)}>新建</Button>
           <Button small icon={<FolderOpen size={14} />} onClick={handleOpen}>打开</Button>
           <Button small icon={<Save size={14} />} onClick={handleSave}>保存</Button>
         </ButtonGroup>
@@ -795,6 +797,8 @@ function App() {
       {import.meta.env.MODE === "development" && (
         <MemoryMonitor memoryInfo={memoryInfo} currentTool={allTools.find((t: ToolDef) => t.id === currentTool)?.label} />
       )}
+
+      <NewDocumentDialog isOpen={newDocDialogOpen} onClose={() => setNewDocDialogOpen(false)} />
     </div>
   );
 }

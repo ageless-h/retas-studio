@@ -33,7 +33,7 @@ const DOC_HEIGHT = 1080;
 
 export default function UnifiedCanvas({
   tool,
-  zoom: _zoom,
+  zoom: externalZoom,
   color = "#000000",
   brushSize = 2,
   onionSkin,
@@ -62,6 +62,14 @@ export default function UnifiedCanvas({
   const needsRefreshRef = useRef(true);
   const isRefreshingRef = useRef(false);
 
+  // Zoom & pan state
+  const zoomRef = useRef(1.0);
+  const panRef = useRef({ x: 0, y: 0 });
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const spaceHeldRef = useRef(false);
+  const [viewZoom, setViewZoom] = useState(1.0);
+
   const isSelectingRef = useRef(false);
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const selectionPointsRef = useRef<{ x: number; y: number }[]>([]);
@@ -82,13 +90,45 @@ export default function UnifiedCanvas({
     setDebugInfo((prev) => ({ ...prev, tool, color, brushSize }));
   }, [tool, color, brushSize]);
 
+  // Sync external zoom (from toolbar +/- buttons) to internal zoom
+  useEffect(() => {
+    if (externalZoom !== undefined) {
+      const z = externalZoom / 100;
+      zoomRef.current = z;
+      setViewZoom(z);
+    }
+  }, [externalZoom]);
+
+  // Space key tracking for pan mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        e.preventDefault();
+        spaceHeldRef.current = true;
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        spaceHeldRef.current = false;
+        isPanningRef.current = false;
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
   const getCursor = () => {
+    if (spaceHeldRef.current || tool === "hand") {
+      return isPanningRef.current ? "grabbing" : "grab";
+    }
     switch (tool) {
       case "brush":
       case "eraser":
         return "crosshair";
-      case "hand":
-        return "grab";
       case "zoom":
         return "zoom-in";
       case "select":
@@ -322,15 +362,19 @@ export default function UnifiedCanvas({
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0, pressure: 0.5 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = DOC_WIDTH / rect.width;
-    const scaleY = DOC_HEIGHT / rect.height;
-    // PointerEvent has pressure (0.0–1.0); MouseEvent doesn't → default 0.5
+    // The canvas element is scaled by CSS transform, so rect already accounts for visual size.
+    // Map client coords → document coords by inversing the CSS transform.
+    const zoom = zoomRef.current;
+    const pan = panRef.current;
+    const scaleX = DOC_WIDTH / (DOC_WIDTH * zoom);
+    const scaleY = DOC_HEIGHT / (DOC_HEIGHT * zoom);
+    const clientX = e.clientX - rect.left;
+    const clientY = e.clientY - rect.top;
+    // rect.width = DOC_WIDTH * zoom, so scaleX = DOC_WIDTH / rect.width
+    const docX = (clientX / rect.width) * DOC_WIDTH;
+    const docY = (clientY / rect.height) * DOC_HEIGHT;
     const pressure = "pressure" in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-      pressure,
-    };
+    return { x: docX, y: docY, pressure };
   }, []);
 
   const drawSelectionPreview = useCallback(() => {
@@ -384,9 +428,44 @@ export default function UnifiedCanvas({
     surfaceRef.current.flush();
   }, [canvasKit, selectionTool, currentSelectionRect]);
 
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = Math.max(0.1, Math.min(10, zoomRef.current * delta));
+    
+    // Zoom toward cursor position
+    const container = canvasRef.current?.parentElement;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      // Adjust pan so the point under the cursor stays fixed
+      const scale = newZoom / zoomRef.current;
+      panRef.current = {
+        x: cx - (cx - panRef.current.x) * scale,
+        y: cy - (cy - panRef.current.y) * scale,
+      };
+    }
+    
+    zoomRef.current = newZoom;
+    setViewZoom(newZoom);
+  }, []);
+
   const handleMouseDown = useCallback(
     (e: React.PointerEvent) => {
       if (!surfaceRef.current || !paintRef.current) return;
+      
+      // Pan mode: space+drag or hand tool
+      if (spaceHeldRef.current || tool === "hand") {
+        isPanningRef.current = true;
+        panStartRef.current = {
+          x: e.clientX,
+          y: e.clientY,
+          panX: panRef.current.x,
+          panY: panRef.current.y,
+        };
+        return;
+      }
       
       if (tool === "select") {
         isSelectingRef.current = true;
@@ -440,6 +519,17 @@ export default function UnifiedCanvas({
   const handleMouseMove = useCallback(
     (e: React.PointerEvent) => {
       if (!surfaceRef.current || !canvasKit) return;
+      
+      // Pan dragging
+      if (isPanningRef.current) {
+        panRef.current = {
+          x: panStartRef.current.panX + (e.clientX - panStartRef.current.x),
+          y: panStartRef.current.panY + (e.clientY - panStartRef.current.y),
+        };
+        // Force re-render for CSS transform update
+        setViewZoom(zoomRef.current);
+        return;
+      }
       
       if (tool === "select" && isSelectingRef.current && selectionStartRef.current) {
         const pos = getCanvasPos(e);
@@ -515,6 +605,12 @@ export default function UnifiedCanvas({
   );
 
   const handleMouseUp = useCallback(async () => {
+      // Stop panning
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        return;
+      }
+      
       if (tool === "select" && isSelectingRef.current) {
         isSelectingRef.current = false;
         
@@ -643,26 +739,35 @@ export default function UnifiedCanvas({
         position: "relative",
         width: "100%",
         height: "100%",
-        overflow: "auto",
+        overflow: "hidden",
         background: "#161b22",
       }}
+      onWheel={handleWheel}
     >
-      <canvas
-        ref={canvasRef}
-        data-testid="main-canvas"
-        width={DOC_WIDTH}
-        height={DOC_HEIGHT}
+      <div
         style={{
-          width: DOC_WIDTH,
-          height: DOC_HEIGHT,
-          cursor: getCursor(),
-          touchAction: "none", // Required for pressure-sensitive stylus input
+          position: "absolute",
+          transform: `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${viewZoom})`,
+          transformOrigin: "0 0",
         }}
-        onPointerDown={handleMouseDown}
-        onPointerMove={handleMouseMove}
-        onPointerUp={handleMouseUp}
-        onPointerLeave={handleMouseUp}
-      />
+      >
+        <canvas
+          ref={canvasRef}
+          data-testid="main-canvas"
+          width={DOC_WIDTH}
+          height={DOC_HEIGHT}
+          style={{
+            width: DOC_WIDTH,
+            height: DOC_HEIGHT,
+            cursor: getCursor(),
+            touchAction: "none",
+          }}
+          onPointerDown={handleMouseDown}
+          onPointerMove={handleMouseMove}
+          onPointerUp={handleMouseUp}
+          onPointerLeave={handleMouseUp}
+        />
+      </div>
       {import.meta.env.MODE === "development" && (
         <div
           style={{
@@ -688,6 +793,7 @@ export default function UnifiedCanvas({
           <div>bg: {debugInfo.bgReady ? "ready" : "none"}</div>
           <div>tool: {debugInfo.tool}</div>
           <div>size: {debugInfo.brushSize}</div>
+          <div>zoom: {(viewZoom * 100).toFixed(0)}%</div>
         </div>
       )}
     </div>
