@@ -1,5 +1,15 @@
 import { test, expect, Page } from "@playwright/test";
 
+async function waitForMockState(page: Page, predicate: (state: any) => boolean, timeout = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const state = await getMockState(page);
+    if (state && predicate(state)) return state;
+    await page.waitForTimeout(50);
+  }
+  throw new Error("waitForMockState timeout");
+}
+
 async function getMockState(page: Page) {
   return page.evaluate(() => {
     const mock = (window as any).__RETAS_MOCK__;

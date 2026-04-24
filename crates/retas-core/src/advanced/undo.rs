@@ -483,7 +483,30 @@ impl Command for FillCommand {
                         self.old_pixel_data = frame.image_data.as_ref().clone();
                     }
                     let color = self.fill_color;
+                    let width = frame.width;
+                    let height = frame.height;
                     let data = frame.get_image_data_mut();
+                    
+                    if let Some(ref selection) = self.selection {
+                        if selection.is_active {
+                            let bitmap = selection.to_bitmap();
+                            if let crate::advanced::selection::SelectionMask::Bitmap { data: mask_data, .. } = bitmap {
+                                for (i, &alpha) in mask_data.iter().enumerate() {
+                                    if alpha > 0 {
+                                        let idx = i * 4;
+                                        if idx + 3 < data.len() {
+                                            data[idx] = color.r;
+                                            data[idx + 1] = color.g;
+                                            data[idx + 2] = color.b;
+                                            data[idx + 3] = color.a;
+                                        }
+                                    }
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    
                     for i in (0..data.len()).step_by(4) {
                         if i + 3 < data.len() {
                             data[i] = color.r;

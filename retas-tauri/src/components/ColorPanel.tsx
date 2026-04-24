@@ -45,7 +45,7 @@ export default function ColorPanel({ color, onColorChange, brushSize, onBrushSiz
                 borderRadius: 4,
                 padding: 0,
               }}
-              onClick={() => { console.log('COLOR_CHANGE', c); onColorChange(c); }}
+              onClick={() => onColorChange(c)}
             />
           ))}
         </div>

@@ -1,0 +1,48 @@
+- generic [active] [ref=e1]:
+  - link "跳至主要內容" [ref=e2] [cursor=pointer]:
+    - /url: "#rh-topic"
+  - banner [ref=e3]:
+    - link "商標" [ref=e6] [cursor=pointer]:
+      - /url: https://help.clip-studio.com/zh-tw/First_Topic.htm
+    - search [ref=e9]:
+      - combobox "搜尋..." [ref=e12]
+  - main [ref=e14]:
+    - tabpanel "內容" [ref=e19]:
+      - tree "內容" [ref=e20]
+    - generic [ref=e23]:
+      - generic:
+        - generic:
+          - region "選取的篩選器":
+            - list
+      - generic [ref=e26]:
+        - heading "Windows／macOS的基本操作" [level=1] [ref=e27]: Windows／macOS的基本操作
+        - paragraph [ref=e28]: 介紹使用Windows和macOS的CLIP STUDIO PAINT繪畫時，從建立畫布、繪製線條，到保存作品的簡單功能。
+        - paragraph [ref=e29]:
+          - generic [ref=e30]: ·
+          - link "Windows／macOS的介面" [ref=e31] [cursor=pointer]:
+            - /url: Windows／macOS的介面.htm#XREF_14975__Windows_macOSのインターフェース21
+        - paragraph [ref=e32]:
+          - generic [ref=e33]: ·
+          - link "Windows／macOS的基本操作" [ref=e34] [cursor=pointer]:
+            - /url: Windows／macOS的基本操作.htm#XREF_16598__Windows_macOSの基本的な操作21
+      - button "回到最上層" [ref=e38] [cursor=pointer]
+  - contentinfo [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - link "返回首頁" [ref=e42] [cursor=pointer]:
+          - /url: ../../First_Topic.htm
+        - link "CLIP STUDIO.net" [ref=e43] [cursor=pointer]:
+          - /url: https://www.clipstudio.net/tc/
+        - link "關於本手冊" [ref=e44] [cursor=pointer]:
+          - /url: ../870_about/870_about.htm
+        - link "支援" [ref=e45] [cursor=pointer]:
+          - /url: https://support.clip-studio.com/zh-tw/
+        - combobox [ref=e48] [cursor=pointer]:
+          - option "繁體中文" [selected]
+          - option "日本語"
+          - option "English"
+          - option "Français"
+          - option "Español"
+          - option "Deutsch"
+          - option "한국어"
+      - paragraph [ref=e49]: © CELSYS, Inc.

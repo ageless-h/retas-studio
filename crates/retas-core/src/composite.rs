@@ -207,14 +207,34 @@ pub fn composite_layers(
     width: u32,
     height: u32,
 ) -> Vec<u8> {
-    let mut result = vec![0u8; (width * height * 4) as usize];
+    let pixel_count = (width * height * 4) as usize;
+    let mut buffer_a = vec![0u8; pixel_count];
+    let mut buffer_b = vec![0u8; pixel_count];
+    let mut use_a_as_result = true;
 
-    for ((layer, mode), opacity) in layers.iter().zip(blend_modes.iter()).zip(opacities.iter()) {
-        let temp = result.clone();
-        blend_pixels_rgba(&temp, layer, &mut result, *mode, *opacity);
+    for (i, ((layer, mode), opacity)) in layers.iter().zip(blend_modes.iter()).zip(opacities.iter()).enumerate() {
+        let (src, dst) = if use_a_as_result {
+            (&buffer_a[..], &mut buffer_b[..])
+        } else {
+            (&buffer_b[..], &mut buffer_a[..])
+        };
+        
+        if i == 0 {
+            for j in 0..pixel_count.min(layer.len()) {
+                dst[j] = layer[j];
+            }
+        } else {
+            blend_pixels_rgba(src, layer, dst, *mode, *opacity);
+        }
+        
+        use_a_as_result = !use_a_as_result;
     }
 
-    result
+    if use_a_as_result {
+        buffer_a
+    } else {
+        buffer_b
+    }
 }
 
 pub fn apply_mask(image: &mut [u8], mask: &[u8], width: u32, height: u32) {

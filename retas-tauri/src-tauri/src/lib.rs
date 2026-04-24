@@ -830,6 +830,35 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
 }
 
 #[tauri::command]
+fn flood_fill_layer(x: u32, y: u32, color: (u8, u8, u8, u8), tolerance: f64, state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = doc.timeline.current_frame;
+    
+    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support fill".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let width = frame.width;
+    let height = frame.height;
+    
+    if x >= width || y >= height {
+        return Err("Start point out of bounds".to_string());
+    }
+    
+    let fill_color = retas_core::Color8 { r: color.0, g: color.1, b: color.2, a: color.3 };
+    let filled = retas_core::composite::flood_fill(frame.image_data.as_ref(), width, height, x, y, fill_color, tolerance);
+    
+    frame.image_data = std::sync::Arc::new(filled);
+    Ok(())
+}
+
+#[tauri::command]
 fn select_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&id)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
@@ -883,6 +912,7 @@ pub fn run() {
             get_selection_bounds,
             invert_selection,
             apply_selection_to_layer,
+            flood_fill_layer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

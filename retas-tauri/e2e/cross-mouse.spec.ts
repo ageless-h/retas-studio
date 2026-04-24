@@ -1,5 +1,15 @@
 import { test, expect, Page } from "@playwright/test";
 
+async function waitForMockState(page: Page, predicate: (state: any) => boolean, timeout = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const state = await getMockState(page);
+    if (state && predicate(state)) return state;
+    await page.waitForTimeout(50);
+  }
+  throw new Error("waitForMockState timeout");
+}
+
 async function getMockState(page: Page) {
   return page.evaluate(() => {
     const mock = (window as any).__RETAS_MOCK__;
@@ -62,7 +72,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.waitForSelector('[data-testid="main-canvas"]', { timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
   });
 
   test("A01: brush drawing persists and enables undo button", async ({ page }) => {
@@ -71,7 +81,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
     await expect(undoBtn).toBeDisabled();
 
     await drawOnCanvas(page, center.x, center.y, center.x + 50, center.y + 50);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
 
     await expect(undoBtn).toBeEnabled();
     const state = await getMockState(page);
@@ -83,7 +93,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
   test("A02: undo click disables undo and enables redo", async ({ page }) => {
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 50, center.y + 50);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
 
     const undoBtn = page.locator('[data-testid="toolbar-undo"]');
     const redoBtn = page.locator('[data-testid="toolbar-redo"]');
@@ -91,7 +101,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
     await expect(redoBtn).toBeDisabled();
 
     await undoBtn.click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     await expect(undoBtn).toBeDisabled();
     await expect(redoBtn).toBeEnabled();
@@ -100,7 +110,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
   test("A03: eraser tool switches via mouse and removes drawn pixels", async ({ page }) => {
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 30, center.y + 30);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const activeLayerId = state!.selectedLayers[0];
@@ -114,7 +124,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
     await page.waitForTimeout(200);
 
     await drawOnCanvas(page, center.x + 10, center.y + 10, center.x + 20, center.y + 20);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const afterPixels = await getLayerPixels(page, activeLayerId);
     const remainingCount = countNonTransparentPixels(afterPixels);
@@ -124,7 +134,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
   test("A04: layer visibility toggle affects canvas composite", async ({ page }) => {
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 50, center.y + 50);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateBefore = await getMockState(page);
     const activeLayerId = stateBefore!.selectedLayers[0];
@@ -133,7 +143,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
     const visibilityBtn = page.locator(`[data-testid="layer-visibility-${stateBefore!.layers[0].id}"]`);
     await visibilityBtn.click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateAfter = await getMockState(page);
     expect(stateAfter!.layers[0].visible).toBe(false);
@@ -144,7 +154,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
     const countBefore = stateBefore!.layerCount;
 
     await page.locator('[data-testid="layer-add"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateAfter = await getMockState(page);
     expect(stateAfter!.layerCount).toBe(countBefore + 1);
@@ -152,14 +162,14 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A06: frame navigation updates both timeline and mock state", async ({ page }) => {
     await page.locator('[data-testid="frame-add"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const counterBefore = await page.locator('[data-testid="frame-counter"]').textContent();
     const stateBefore = await getMockState(page);
     expect(stateBefore!.currentFrame).toBe(0);
 
     await page.locator('[data-testid="frame-next"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const counterAfter = await page.locator('[data-testid="frame-counter"]').textContent();
     const stateAfter = await getMockState(page);
@@ -169,13 +179,13 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A07: draw on frame 2, navigate away, return, pixels persist", async ({ page }) => {
     await page.locator('[data-testid="frame-add"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
     await page.locator('[data-testid="frame-next"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 50, center.y + 50);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateFrame2 = await getMockState(page);
     const activeLayerId = stateFrame2!.selectedLayers[0];
@@ -184,9 +194,9 @@ test.describe("Cross-Panel Mouse Testing", () => {
     expect(drawnPixels).toBeGreaterThan(0);
 
     await page.locator('[data-testid="frame-prev"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
     await page.locator('[data-testid="frame-next"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const pixelsAgain = await getLayerPixels(page, activeLayerId);
     expect(countNonTransparentPixels(pixelsAgain)).toBe(drawnPixels);
@@ -201,7 +211,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 30, center.y + 30);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const activeLayerId = state!.selectedLayers[0];
@@ -211,18 +221,18 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A09: workspace switch changes right panel via mouse", async ({ page }) => {
     await page.locator('[data-testid="workspace-animation"]').click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
     await expect(page.getByText("动画属性").nth(1)).toBeVisible();
 
     await page.locator('[data-testid="workspace-drawing"]').click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
     await expect(page.locator('[data-testid="current-color-preview"]')).toBeVisible();
   });
 
   test("A10: empty click on canvas does not create pixels", async ({ page }) => {
     const center = await getCanvasDrawPoint(page);
     await page.locator('[data-testid="main-canvas"]').click({ position: { x: center.x, y: center.y } });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const activeLayerId = state!.selectedLayers[0];
@@ -242,7 +252,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 30, center.y + 30);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const activeLayerId = state!.selectedLayers[0];
@@ -260,11 +270,11 @@ test.describe("Cross-Panel Mouse Testing", () => {
     const beforeCount = countNonTransparentPixels(beforePixels);
 
     await page.locator(`[data-testid="layer-lock-${firstLayer.id}"]`).click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 30, center.y + 30);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const afterPixels = await getLayerPixels(page, firstLayer.id);
     const afterCount = countNonTransparentPixels(afterPixels);
@@ -273,7 +283,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A13: select different layer and draw isolates strokes", async ({ page }) => {
     await page.locator('[data-testid="layer-add"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const firstLayerId = state!.layers[0].id;
@@ -284,7 +294,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
     const center = await getCanvasDrawPoint(page);
     await drawOnCanvas(page, center.x, center.y, center.x + 30, center.y + 30);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const firstLayerPixels = await getLayerPixels(page, firstLayerId);
     const firstLayerCount = countNonTransparentPixels(firstLayerPixels);
@@ -300,7 +310,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
     expect(box).not.toBeNull();
 
     await drawOnCanvas(page, 5, 5, box!.width - 5, box!.height - 5);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const state = await getMockState(page);
     const activeLayerId = state!.selectedLayers[0];
@@ -310,13 +320,13 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A15: delete frame decreases total frame count", async ({ page }) => {
     await page.locator('[data-testid="frame-add"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateBefore = await getMockState(page);
     const totalBefore = stateBefore!.totalFrames;
 
     await page.locator('[data-testid="frame-delete"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
 
     const stateAfter = await getMockState(page);
     expect(stateAfter!.totalFrames).toBe(totalBefore - 1);
@@ -324,7 +334,7 @@ test.describe("Cross-Panel Mouse Testing", () => {
 
   test("A16: workspace coloring shows color panel and allows color pick", async ({ page }) => {
     await page.locator('[data-testid="workspace-coloring"]').click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
 
     await expect(page.locator('[data-testid="current-color-preview"]')).toBeVisible();
 

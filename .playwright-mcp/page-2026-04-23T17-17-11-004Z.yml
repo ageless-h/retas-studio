@@ -1,0 +1,218 @@
+- generic [active] [ref=e1]:
+  - link "跳至主要內容" [ref=e2] [cursor=pointer]:
+    - /url: "#rh-topic"
+  - banner [ref=e3]:
+    - link "商標" [ref=e6] [cursor=pointer]:
+      - /url: https://help.clip-studio.com/zh-tw/First_Topic.htm
+    - search [ref=e9]:
+      - combobox "搜尋..." [ref=e12]
+  - main [ref=e14]:
+    - tabpanel "內容" [ref=e19]:
+      - tree "內容" [ref=e20]:
+        - treeitem "更新歷史記錄" [ref=e21]:
+          - link "更新歷史記錄" [ref=e24] [cursor=pointer]:
+            - /url: ./manual_tc/030_new/030_new.htm
+        - treeitem "Windows／macOS的基本操作" [ref=e25]:
+          - link "Windows／macOS的基本操作" [ref=e28] [cursor=pointer]:
+            - /url: ./manual_tc/060_pc/060_pc.htm
+        - treeitem "平板電腦的基本操作【iPad／Android】" [ref=e29]:
+          - link "平板電腦的基本操作【iPad／Android】" [ref=e32] [cursor=pointer]:
+            - /url: ./manual_tc/090_tablet/090_tablet.htm
+        - treeitem "工具的種類和設定" [ref=e33]:
+          - link "工具的種類和設定" [ref=e36] [cursor=pointer]:
+            - /url: ./manual_tc/150_tools/150_tools.htm
+        - treeitem "圖層" [ref=e37]:
+          - link "圖層" [ref=e40] [cursor=pointer]:
+            - /url: ./manual_tc/180_layers/180_layers.htm
+        - treeitem "檔案的建立、讀取、寫出" [ref=e41]:
+          - link "檔案的建立、讀取、寫出" [ref=e44] [cursor=pointer]:
+            - /url: ./manual_tc/210_files/210_files.htm
+        - treeitem "使用筆刷進行描繪" [ref=e45]:
+          - link "使用筆刷進行描繪" [ref=e48] [cursor=pointer]:
+            - /url: ./manual_tc/240_brushes/240_brushes.htm
+        - treeitem "畫布的基本操作" [ref=e49]:
+          - link "畫布的基本操作" [ref=e52] [cursor=pointer]:
+            - /url: ./manual_tc/270_canvas/270_canvas.htm
+        - treeitem "選擇・建立顏色" [ref=e53]:
+          - link "選擇・建立顏色" [ref=e56] [cursor=pointer]:
+            - /url: ./manual_tc/300_color/300_color.htm
+        - treeitem "選擇範圍" [ref=e57]:
+          - link "選擇範圍" [ref=e60] [cursor=pointer]:
+            - /url: ./manual_tc/330_selection/330_selection.htm
+        - treeitem "變形・對齊・均分" [ref=e61]:
+          - link "變形・對齊・均分" [ref=e64] [cursor=pointer]:
+            - /url: ./manual_tc/360_transform/360_transform.htm
+        - treeitem "色調補償・加工・濾鏡" [ref=e65]:
+          - link "色調補償・加工・濾鏡" [ref=e68] [cursor=pointer]:
+            - /url: ./manual_tc/390_filters/390_filters.htm
+        - treeitem "填充和漸層" [ref=e69]:
+          - link "填充和漸層" [ref=e72] [cursor=pointer]:
+            - /url: ./manual_tc/420_fill/420_fill.htm
+        - treeitem "使用圖形進行描繪" [ref=e73]:
+          - link "使用圖形進行描繪" [ref=e76] [cursor=pointer]:
+            - /url: ./manual_tc/450_figure/450_figure.htm
+        - treeitem "文字" [ref=e77]:
+          - link "文字" [ref=e80] [cursor=pointer]:
+            - /url: ./manual_tc/480_text/480_text.htm
+        - treeitem "尺規的使用方法【PRO／EX】" [ref=e81]:
+          - link "尺規的使用方法【PRO／EX】" [ref=e84] [cursor=pointer]:
+            - /url: ./manual_tc/510_ruler/510_ruler.htm
+        - treeitem "漫畫・條漫" [ref=e85]:
+          - link "漫畫・條漫" [ref=e88] [cursor=pointer]:
+            - /url: ./manual_tc/540_comic/540_comic.htm
+        - treeitem "頁面管理【EX】" [ref=e89]:
+          - link "頁面管理【EX】" [ref=e92] [cursor=pointer]:
+            - /url: ./manual_tc/570_pages/570_pages.htm
+        - treeitem "動畫" [ref=e93]:
+          - link "動畫" [ref=e96] [cursor=pointer]:
+            - /url: ./manual_tc/600_animation/600_animation.htm
+        - treeitem "素材的使用方法" [ref=e97]:
+          - link "素材的使用方法" [ref=e100] [cursor=pointer]:
+            - /url: ./manual_tc/630_material/630_material.htm
+        - treeitem "3D功能的使用方法" [ref=e101]:
+          - link "3D功能的使用方法" [ref=e104] [cursor=pointer]:
+            - /url: ./manual_tc/660_3d/660_3d.htm
+        - treeitem "介面的自訂設定" [ref=e105]:
+          - link "介面的自訂設定" [ref=e108] [cursor=pointer]:
+            - /url: ./manual_tc/690_interface/690_interface.htm
+        - treeitem "使用CLIP STUDIO PAINT的設定" [ref=e109]:
+          - link "使用CLIP STUDIO PAINT的設定" [ref=e112] [cursor=pointer]:
+            - /url: ./manual_tc/720_preferences/720_preferences.htm
+        - treeitem "觸控手勢【Windows／平板電腦】" [ref=e113]:
+          - link "觸控手勢【Windows／平板電腦】" [ref=e116] [cursor=pointer]:
+            - /url: ./manual_tc/750_gestures/750_gestures.htm
+        - treeitem "捷徑一覽" [ref=e117]:
+          - link "捷徑一覽" [ref=e120] [cursor=pointer]:
+            - /url: ./manual_tc/780_shortcuts/780_shortcuts.htm
+        - treeitem "工具設定項目一覽" [ref=e121]:
+          - link "工具設定項目一覽" [ref=e124] [cursor=pointer]:
+            - /url: ./manual_tc/810_subtools/810_subtools.htm
+        - treeitem "使用附加裝置" [ref=e125]:
+          - link "使用附加裝置" [ref=e128] [cursor=pointer]:
+            - /url: ./manual_tc/840_options/840_options.htm
+        - treeitem "關於本手冊" [ref=e129]:
+          - link "關於本手冊" [ref=e132] [cursor=pointer]:
+            - /url: ./manual_tc/870_about/870_about.htm
+    - generic [ref=e135]:
+      - generic:
+        - generic:
+          - region "選取的篩選器":
+            - list
+      - generic [ref=e138]:
+        - heading "CLIP STUDIO PAINT 用戶指南" [level=1] [ref=e139]
+        - generic [ref=e140]:
+          - paragraph [ref=e141]:
+            - text: 介紹CLIP STUDIO PAINT Ver.4.0操作方法的手冊。可由上方的搜尋列中搜尋教學手冊。
+            - text: 支援Windows／macOS／iPad／Android平板電腦。
+            - text: 關於過去版本的操作方式，可瀏覽
+            - link "此處" [ref=e142] [cursor=pointer]:
+              - /url: "#pdf"
+            - text: 。
+          - generic [ref=e144]:
+            - heading "熱門功能" [level=2] [ref=e145]
+            - generic [ref=e146]:
+              - link "更好描畫的筆刷設定 更好描畫的筆刷設定" [ref=e147] [cursor=pointer]:
+                - /url: manual_tc/240_brushes/調節筆壓檢測等級.htm
+                - img "更好描畫的筆刷設定" [ref=e148]
+                - paragraph [ref=e149]: 更好描畫的筆刷設定
+              - link "3D素描人偶 3D素描人偶" [ref=e150] [cursor=pointer]:
+                - /url: manual_tc/660_3d/變更3D素描人偶的體型.htm
+                - img "3D素描人偶" [ref=e151]
+                - paragraph [ref=e152]: 3D素描人偶
+              - link "夥伴模式 夥伴模式" [ref=e153] [cursor=pointer]:
+                - /url: manual_tc/840_options/夥伴模式.htm
+                - img "夥伴模式" [ref=e154]
+                - paragraph [ref=e155]: 夥伴模式
+              - link "漫畫用網點 漫畫用網點" [ref=e156] [cursor=pointer]:
+                - /url: manual_tc/540_comic/網點【PRO／EX】.htm
+                - img "漫畫用網點" [ref=e157]
+                - paragraph [ref=e158]: 漫畫用網點
+              - link "漸層對應・色調補償 漸層對應・色調補償" [ref=e159] [cursor=pointer]:
+                - /url: manual_tc/390_filters/色調補償.htm
+                - img "漸層對應・色調補償" [ref=e160]
+                - paragraph [ref=e161]: 漸層對應・色調補償
+              - link "向量圖層 向量圖層" [ref=e162] [cursor=pointer]:
+                - /url: manual_tc/180_layers/向量圖層【PRO／EX】.htm
+                - img "向量圖層" [ref=e163]
+                - paragraph [ref=e164]: 向量圖層
+              - link "動畫 動畫" [ref=e165] [cursor=pointer]:
+                - /url: manual_tc/600_animation/用於製作動畫用檔案的設定.htm
+                - img "動畫" [ref=e166]
+                - paragraph [ref=e167]: 動畫
+              - link "輸出Webtoon 輸出Webtoon" [ref=e168] [cursor=pointer]:
+                - /url: manual_tc/540_comic/Webtoon條漫.htm
+                - img "輸出Webtoon" [ref=e169]
+                - paragraph [ref=e170]: 輸出Webtoon
+              - link "色彩設定檔 色彩設定檔" [ref=e171] [cursor=pointer]:
+                - /url: manual_tc/210_files/顯示預覽色彩設定檔【PRO／EX】.htm
+                - img "色彩設定檔" [ref=e172]
+                - paragraph [ref=e173]: 色彩設定檔
+              - link "透視尺規 透視尺規" [ref=e174] [cursor=pointer]:
+                - /url: manual_tc/510_ruler/尺規的種類和建立方法.htm#1363012
+                - img "透視尺規" [ref=e175]
+                - paragraph [ref=e176]: 透視尺規
+              - link "自動動作 自動動作" [ref=e177] [cursor=pointer]:
+                - /url: manual_tc/720_preferences/自動動作面板【PRO／EX】.htm
+                - img "自動動作" [ref=e178]
+                - paragraph [ref=e179]: 自動動作
+              - link "縮時攝影 縮時攝影" [ref=e180] [cursor=pointer]:
+                - /url: manual_tc/210_files/縮時攝影.htm
+                - img "縮時攝影" [ref=e181]
+                - paragraph [ref=e182]: 縮時攝影
+            - heading "PDF下載" [level=2] [ref=e183]
+            - paragraph [ref=e184]: 關於過去版本的操作方式，可瀏覽下方的PDF檔案。
+            - list [ref=e185]:
+              - listitem [ref=e186]:
+                - link "支援 CLIP STUDIO PAINT Ver.1用戶指南（英文）" [ref=e187] [cursor=pointer]:
+                  - /url: https://vd.clipstudio.net/clipcontent/paint/manual/EN_CSP_UserGuide_Ver1.pdf
+              - listitem [ref=e188]:
+                - link "支援 CLIP STUDIO PAINT Ver.2用戶指南（英文）" [ref=e189] [cursor=pointer]:
+                  - /url: https://vd.clipstudio.net/clipcontent/paint/manual/EN_CSP_UserGuide_Ver2.pdf
+              - listitem [ref=e190]:
+                - link "支援 CLIP STUDIO PAINT Ver.3用戶指南" [ref=e191] [cursor=pointer]:
+                  - /url: https://vd.clipstudio.net/clipcontent/paint/manual/TC_CSP_UserGuide_Ver3.pdf
+            - heading "官方使用方法講座" [level=2] [ref=e192]
+            - paragraph [ref=e193]: 從基礎操作到最新功能，完整說明應用程式的操作方法，非常推薦首次使用的人研讀學習。簡約模式與智慧型手機版的用法也請由此查看。
+            - generic [ref=e194]:
+              - link [ref=e195] [cursor=pointer]:
+                - /url: https://tips.clip-studio.com/zh-tw/official
+                - img [ref=e196]
+              - link "New features" [ref=e197] [cursor=pointer]:
+                - /url: https://tips.clip-studio.com/zh-tw/official/?anchor=newfeatures
+                - img "New features" [ref=e198]
+            - heading "CLIP STUDIO社群" [level=2] [ref=e199]
+            - generic [ref=e200]:
+              - link "繪圖小技巧" [ref=e201] [cursor=pointer]:
+                - /url: https://tips.clip-studio.com/zh-tw
+                - img "繪圖小技巧" [ref=e202]
+              - link "官方YouTube頻道" [ref=e203] [cursor=pointer]:
+                - /url: https://www.youtube.com/c/CLIPSTUDIOchannel
+                - img "官方YouTube頻道" [ref=e204]
+              - link "CLIP STUDIO ASK" [ref=e205] [cursor=pointer]:
+                - /url: https://ask.clip-studio.com/zh-tw
+                - img "CLIP STUDIO ASK" [ref=e206]
+            - heading "官方支援" [level=2] [ref=e207]
+            - link "FAQ and Inquiries" [ref=e209] [cursor=pointer]:
+              - /url: https://support.clip-studio.com/zh-tw
+              - img "FAQ and Inquiries" [ref=e210]
+      - button "回到最上層" [ref=e214] [cursor=pointer]
+  - contentinfo [ref=e215]:
+    - generic [ref=e216]:
+      - generic [ref=e217]:
+        - link "返回首頁" [ref=e218] [cursor=pointer]:
+          - /url: First_Topic.htm
+        - link "CLIP STUDIO.net" [ref=e219] [cursor=pointer]:
+          - /url: https://www.clipstudio.net/tc/
+        - link "關於本手冊" [ref=e220] [cursor=pointer]:
+          - /url: manual_tc/870_about/870_about.htm
+        - link "支援" [ref=e221] [cursor=pointer]:
+          - /url: https://support.clip-studio.com/zh-tw/
+        - combobox [ref=e224] [cursor=pointer]:
+          - option "繁體中文" [selected]
+          - option "日本語"
+          - option "English"
+          - option "Français"
+          - option "Español"
+          - option "Deutsch"
+          - option "한국어"
+      - paragraph [ref=e225]: © CELSYS, Inc.
