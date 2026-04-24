@@ -8,6 +8,7 @@ use state::AppState;
 use retas_core::Layer as RetasLayer;
 use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
 use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand, SnapshotCommand};
+use retas_core::advanced::brush::{BrushEngine, BrushSettings, BrushPoint, BrushType, BrushBlendMode};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerInfo {
@@ -346,18 +347,43 @@ fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<Stri
     let frame_width = frame.width;
     let frame_height = frame.height;
 
-    for window in command.points.windows(2) {
-        let (x0, y0) = window[0];
-        let (x1, y1) = window[1];
-        draw_line_on_pixels(
-            frame.get_image_data_mut(),
-            frame_width,
-            frame_height,
-            x0, y0, x1, y1,
-            command.color,
-            command.size,
-            is_eraser,
-        );
+    // Use BrushEngine for point processing (smoothing, spacing interpolation)
+    let color = retas_core::Color8::new(command.color.0, command.color.1, command.color.2, 255);
+    let brush_settings = BrushSettings::new(command.size, color)
+        .with_hardness(0.8)
+        .with_type(BrushType::Round)
+        .with_blend_mode(BrushBlendMode::Normal);
+    
+    let mut engine = BrushEngine::new();
+    
+    if let Some(&first) = command.points.first() {
+        let first_point = BrushPoint::new(retas_core::Point::new(first.0, first.1));
+        engine.start_stroke(brush_settings, first_point);
+        
+        for &(x, y) in command.points.iter().skip(1) {
+            engine.add_point(BrushPoint::new(retas_core::Point::new(x, y)));
+        }
+        
+        if let Some(stroke) = engine.end_stroke() {
+            // Get interpolated points from BrushEngine (applies spacing + smoothing)
+            let interpolated = stroke.calculate_interpolated_points(0.5);
+            let pixels = frame.get_image_data_mut();
+            
+            for window in interpolated.windows(2) {
+                let p0 = &window[0];
+                let p1 = &window[1];
+                draw_line_on_pixels(
+                    pixels,
+                    frame_width,
+                    frame_height,
+                    p0.position.x, p0.position.y,
+                    p1.position.x, p1.position.y,
+                    command.color,
+                    command.size,
+                    is_eraser,
+                );
+            }
+        }
     }
 
     push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
