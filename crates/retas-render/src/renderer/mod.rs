@@ -7,9 +7,19 @@ use retas_core::{Document, LayerId, Color8, BlendMode, Matrix2D};
 use crate::{RenderDevice, RenderTexture};
 use thiserror::Error;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 mod blend;
 mod layer_render;
+
+/// Cached GPU texture entry. Keyed by (LayerId, frame_number).
+/// Uses Arc pointer identity to detect when pixel data changes.
+pub(crate) struct CachedTexture {
+    pub texture: RenderTexture,
+    /// The raw pointer of the Arc<Vec<u8>> when this texture was uploaded.
+    /// If the Arc pointer changes, the cache is stale.
+    pub data_ptr: usize,
+}
 
 #[derive(Debug, Error)]
 pub enum RenderError {
@@ -71,6 +81,8 @@ pub struct Renderer {
     complex_blend_pipelines: std::collections::HashMap<BlendMode, RenderPipeline>,
     quad_vertex_buffer: Buffer,
     quad_index_buffer: Buffer,
+    /// GPU texture cache: avoids re-uploading unchanged raster frame data.
+    texture_cache: HashMap<(LayerId, u32), CachedTexture>,
 }
 
 impl Renderer {
@@ -110,6 +122,7 @@ impl Renderer {
             complex_blend_pipelines,
             quad_vertex_buffer,
             quad_index_buffer,
+            texture_cache: HashMap::new(),
         })
     }
 
@@ -151,7 +164,7 @@ impl Renderer {
         };
     }
 
-    pub fn render_document(&self, document: &Document, target_texture: &RenderTexture) -> CommandEncoder {
+    pub fn render_document(&mut self, document: &Document, target_texture: &RenderTexture) -> CommandEncoder {
         let mut encoder = self.device.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Document Render Encoder"),
         });

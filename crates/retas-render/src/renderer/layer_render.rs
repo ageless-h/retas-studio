@@ -1,10 +1,10 @@
 use wgpu::{CommandEncoder, LoadOp, StoreOp, Operations, RenderPassColorAttachment};
 use wgpu::util::DeviceExt;
 use retas_core::{Layer, Matrix2D, Color8};
-use super::{Renderer, RenderTexture, Uniforms};
+use super::{Renderer, RenderTexture, Uniforms, CachedTexture};
 
 impl Renderer {
-    pub(crate) fn render_layer(&self, layer: &Layer, target_texture: &RenderTexture, encoder: &mut CommandEncoder) {
+    pub(crate) fn render_layer(&mut self, layer: &Layer, target_texture: &RenderTexture, encoder: &mut CommandEncoder) {
         match layer {
             Layer::Raster(raster_layer) => {
                 self.render_raster_layer(raster_layer, target_texture, encoder);
@@ -23,7 +23,7 @@ impl Renderer {
     }
 
     fn render_raster_layer(
-        &self,
+        &mut self,
         layer: &retas_core::RasterLayer,
         target_texture: &RenderTexture,
         encoder: &mut CommandEncoder,
@@ -33,14 +33,31 @@ impl Renderer {
             _ => return,
         };
 
-        let layer_texture = RenderTexture::from_rgba8(
-            &self.device.device,
-            &self.device.queue,
-            frame.width,
-            frame.height,
-            &frame.image_data,
-            Some(&layer.base.name),
-        );
+        // Texture cache: skip GPU re-upload if Arc<Vec<u8>> pointer unchanged
+        let cache_key = (layer.base.id, layer.current_frame);
+        let current_ptr = std::sync::Arc::as_ptr(&frame.image_data) as usize;
+        
+        let needs_upload = match self.texture_cache.get(&cache_key) {
+            Some(cached) => cached.data_ptr != current_ptr,
+            None => true,
+        };
+        
+        if needs_upload {
+            let new_texture = RenderTexture::from_rgba8(
+                &self.device.device,
+                &self.device.queue,
+                frame.width,
+                frame.height,
+                &frame.image_data,
+                Some(&layer.base.name),
+            );
+            self.texture_cache.insert(cache_key, CachedTexture {
+                texture: new_texture,
+                data_ptr: current_ptr,
+            });
+        }
+        
+        let layer_texture = &self.texture_cache[&cache_key].texture;
 
         let sampler = self.device.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Layer Sampler"),
