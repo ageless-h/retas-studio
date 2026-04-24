@@ -1191,15 +1191,11 @@ fn duplicate_layer(id: String, state: State<Arc<AppState>>) -> Result<LayerInfo,
     // Create a deep copy with new ID
     let new_layer = match src_layer {
         RetasLayer::Raster(mut r) => {
-            r.base = retas_core::LayerBase {
-                id: retas_core::LayerId(retas_core::uuid::Uuid::new_v4()),
-                name: new_name.clone(),
-                visible: r.base.visible,
-                locked: false,
-                opacity: r.base.opacity,
-                blend_mode: r.base.blend_mode,
-                layer_type: r.base.layer_type,
-            };
+            r.base.id = retas_core::LayerId(retas_core::uuid::Uuid::new_v4());
+            r.base.name = new_name.clone();
+            r.base.locked = false;
+            r.base.parent = None;
+            r.base.children = Vec::new();
             // Deep copy frame data
             for frame in r.frames.values_mut() {
                 frame.image_data = std::sync::Arc::new(frame.image_data.as_ref().clone());
@@ -1207,15 +1203,11 @@ fn duplicate_layer(id: String, state: State<Arc<AppState>>) -> Result<LayerInfo,
             RetasLayer::Raster(r)
         }
         RetasLayer::Vector(mut v) => {
-            v.base = retas_core::LayerBase {
-                id: retas_core::LayerId(retas_core::uuid::Uuid::new_v4()),
-                name: new_name.clone(),
-                visible: v.base.visible,
-                locked: false,
-                opacity: v.base.opacity,
-                blend_mode: v.base.blend_mode,
-                layer_type: v.base.layer_type,
-            };
+            v.base.id = retas_core::LayerId(retas_core::uuid::Uuid::new_v4());
+            v.base.name = new_name.clone();
+            v.base.locked = false;
+            v.base.parent = None;
+            v.base.children = Vec::new();
             RetasLayer::Vector(v)
         }
         other => other,
@@ -1511,6 +1503,197 @@ fn export_frame_sequence(
     Ok(())
 }
 
+#[tauri::command]
+fn pick_color(
+    x: u32,
+    y: u32,
+    layer_id: String,
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(u8, u8, u8, u8), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    
+    let layer = doc.layers.get(&lid).ok_or("Layer not found")?;
+    
+    let w = doc.settings.resolution.width as u32;
+    let h = doc.settings.resolution.height as u32;
+    
+    if x >= w || y >= h {
+        return Err("Coordinates out of bounds".to_string());
+    }
+    
+    if let RetasLayer::Raster(raster) = layer {
+        if let Some(frame_data) = raster.frames.get(&frame) {
+            let idx = ((y * w + x) * 4) as usize;
+            if idx + 3 < frame_data.image_data.len() {
+                return Ok((
+                    frame_data.image_data[idx],
+                    frame_data.image_data[idx + 1],
+                    frame_data.image_data[idx + 2],
+                    frame_data.image_data[idx + 3],
+                ));
+            }
+        }
+    }
+    
+    Ok((0, 0, 0, 0))
+}
+
+#[tauri::command]
+fn create_layer_group(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<LayerInfo, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &mut editor.document;
+    
+    let mut base = retas_core::LayerBase::new(&name, retas_core::LayerType::Group);
+    let layer_id = base.id;
+    
+    let layer = RetasLayer::Raster(retas_core::RasterLayer {
+        base,
+        frames: std::collections::HashMap::new(),
+        current_frame: 0,
+        offset: retas_core::Point::ZERO,
+    });
+    
+    let info = LayerInfo {
+        id: layer_id.0.to_string(),
+        name: name.clone(),
+        visible: true,
+        locked: false,
+        opacity: 1.0,
+        layer_type: "Group".to_string(),
+        blend_mode: "Normal".to_string(),
+    };
+    
+    doc.layers.insert(layer_id, layer);
+    doc.timeline.layer_order.push(layer_id);
+    
+    Ok(info)
+}
+
+#[tauri::command]
+fn set_layer_parent(
+    layer_id: String,
+    parent_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &mut editor.document;
+    
+    let parent = match parent_id {
+        Some(ref pid) => Some(parse_layer_id(pid)?),
+        None => None,
+    };
+    
+    if let Some(layer) = doc.layers.get_mut(&lid) {
+        layer.base_mut().parent = parent;
+        Ok(())
+    } else {
+        Err("Layer not found".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_composited_frame(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<u8>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    
+    let w = doc.settings.resolution.width as u32;
+    let h = doc.settings.resolution.height as u32;
+    let mut result = vec![255u8; (w * h * 4) as usize];
+    
+    for layer_id in &doc.timeline.layer_order {
+        if let Some(layer) = doc.layers.get(layer_id) {
+            let base = layer.base();
+            if !base.visible { continue; }
+            
+            if let RetasLayer::Raster(raster) = layer {
+                if let Some(frame_data) = raster.frames.get(&frame) {
+                    let alpha_mult = base.opacity;
+                    let pixels = &frame_data.image_data;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let idx = ((y * w + x) * 4) as usize;
+                            if idx + 3 >= pixels.len() { continue; }
+                            
+                            let sa = (pixels[idx + 3] as f64 / 255.0) * alpha_mult;
+                            if sa <= 0.0 { continue; }
+                            
+                            let da = result[idx + 3] as f64 / 255.0;
+                            let out_a = sa + da * (1.0 - sa);
+                            
+                            if out_a > 0.0 {
+                                for c in 0..3 {
+                                    let sc = pixels[idx + c] as f64;
+                                    let dc = result[idx + c] as f64;
+                                    result[idx + c] = ((sc * sa + dc * da * (1.0 - sa)) / out_a) as u8;
+                                }
+                                result[idx + 3] = (out_a * 255.0) as u8;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(result)
+}
+
+#[tauri::command]
+fn resize_document(
+    width: u32,
+    height: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "调整画布大小");
+    let doc = &mut editor.document;
+    
+    let old_w = doc.settings.resolution.width as u32;
+    
+    for layer in doc.layers.values_mut() {
+        if let RetasLayer::Raster(raster) = layer {
+            for frame_data in raster.frames.values_mut() {
+                let old_pixels = Arc::clone(&frame_data.image_data);
+                let mut new_pixels = vec![0u8; (width * height * 4) as usize];
+                
+                let copy_w = old_w.min(width);
+                let copy_h = (frame_data.height).min(height);
+                
+                for y in 0..copy_h {
+                    let src_start = (y * old_w * 4) as usize;
+                    let dst_start = (y * width * 4) as usize;
+                    let bytes = (copy_w * 4) as usize;
+                    
+                    if src_start + bytes <= old_pixels.len() {
+                        new_pixels[dst_start..dst_start + bytes]
+                            .copy_from_slice(&old_pixels[src_start..src_start + bytes]);
+                    }
+                }
+                
+                frame_data.image_data = Arc::new(new_pixels);
+                frame_data.width = width;
+                frame_data.height = height;
+            }
+        }
+    }
+    
+    doc.settings.resolution.width = width as f64;
+    doc.settings.resolution.height = height as f64;
+    
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -1564,6 +1747,11 @@ pub fn run() {
             paste_pixels,
             export_image,
             export_frame_sequence,
+            pick_color,
+            create_layer_group,
+            set_layer_parent,
+            get_composited_frame,
+            resize_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

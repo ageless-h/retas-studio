@@ -125,6 +125,9 @@ export function useKeyboardShortcuts(
       case "z":
         onToolChange?.("zoom");
         break;
+      case "i":
+        onToolChange?.("eyedropper");
+        break;
       case "[":
         onBrushSizeChange?.(-1);
         break;

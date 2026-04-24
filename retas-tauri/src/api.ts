@@ -391,3 +391,39 @@ export async function exportFrameSequence(
   });
 }
 
+export async function pickColor(
+  x: number,
+  y: number,
+  layerId: string,
+  frame: number
+): Promise<[number, number, number, number]> {
+  if (!isTauri) {
+    return [0, 0, 0, 255];
+  }
+  return safeInvoke("pick_color", { x, y, layerId, frame });
+}
+
+export async function createLayerGroup(name: string): Promise<LayerInfo> {
+  if (!isTauri) {
+    return { id: crypto.randomUUID(), name, visible: true, locked: false, opacity: 1.0, layer_type: "Group", blend_mode: "normal" };
+  }
+  return safeInvoke("create_layer_group", { name });
+}
+
+export async function setLayerParent(layerId: string, parentId: string | null): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_layer_parent", { layerId, parentId });
+}
+
+export async function getCompositedFrame(frame: number): Promise<number[]> {
+  if (!isTauri) {
+    return Array(1920 * 1080 * 4).fill(255);
+  }
+  return safeInvoke("get_composited_frame", { frame });
+}
+
+export async function resizeDocument(width: number, height: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("resize_document", { width, height });
+}
+

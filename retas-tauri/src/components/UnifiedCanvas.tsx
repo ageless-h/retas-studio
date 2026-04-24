@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
-import { applyStrokePixels, compositeLayers, floodFillLayer, SelectionData } from "../api";
+import { applyStrokePixels, compositeLayers, floodFillLayer, SelectionData, pickColor } from "../api";
 import { canvasMonitor } from "../utils/CanvasMonitor";
 
 export interface OnionSkinSettings {
@@ -28,6 +28,8 @@ interface UnifiedCanvasProps {
   selectionTool?: "rect" | "ellipse" | "lasso" | "magicWand";
   selectionMode?: "replace" | "add" | "subtract" | "intersect";
   onSelectionChange?: (selection: SelectionData | null) => void;
+  onColorPick?: (color: string) => void;
+  activeLayerId?: string;
 }
 
 const DOC_WIDTH = 1920;
@@ -47,6 +49,8 @@ export default function UnifiedCanvas({
   selectionTool = "rect",
   selectionMode = "replace",
   onSelectionChange,
+  onColorPick,
+  activeLayerId,
 }: UnifiedCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { canvasKit, isLoading } = useCanvasKit();
@@ -533,6 +537,21 @@ export default function UnifiedCanvas({
             window.dispatchEvent(new CustomEvent("retas:state-changed"));
           })
           .catch((err) => console.error("Fill failed:", err));
+        return;
+      }
+      
+      if (tool === "eyedropper") {
+        const pos = getCanvasPos(e);
+        const px = Math.floor(pos.x);
+        const py = Math.floor(pos.y);
+        if (activeLayerId && onColorPick) {
+          pickColor(px, py, activeLayerId, (currentFrame || 1) - 1)
+            .then(([r, g, b, _a]) => {
+              const hex = "#" + [r, g, b].map(c => c.toString(16).padStart(2, "0")).join("");
+              onColorPick(hex);
+            })
+            .catch((err) => console.error("Eyedropper failed:", err));
+        }
         return;
       }
       

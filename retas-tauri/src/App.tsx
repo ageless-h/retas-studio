@@ -4,7 +4,7 @@ import {
   Brush, Eraser, PenTool, PaintBucket,
   Move, ZoomIn, ZoomOut, Hand, ChevronDown,
   Undo2, Redo2, FolderOpen, Save, FilePlus,
-  Grid3X3, Ruler
+  Grid3X3, Ruler, Pipette
 } from "lucide-react";
 import { DockviewReact, DockviewReadyEvent, IDockviewPanelProps } from "dockview";
 import "dockview/dist/styles/dockview.css";
@@ -34,7 +34,7 @@ import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPan
 import XSheetPanel from "./components/XSheetPanel";
 import EffectsPanel from "./components/EffectsPanel";
 
-type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand";
+type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand" | "eyedropper";
 
 interface ToolDef {
   id: Tool;
@@ -48,6 +48,7 @@ const allTools: ToolDef[] = [
   { id: "pen", icon: <PenTool size={16} />, label: "钢笔" },
   { id: "eraser", icon: <Eraser size={16} />, label: "橡皮" },
   { id: "fill", icon: <PaintBucket size={16} />, label: "填充" },
+  { id: "eyedropper", icon: <Pipette size={16} />, label: "吸管" },
   { id: "hand", icon: <Hand size={16} />, label: "抓手" },
 ];
 
@@ -72,6 +73,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
   selectionTool?: "rect" | "ellipse" | "lasso" | "magicWand";
   selectionMode?: "replace" | "add" | "subtract" | "intersect";
   onSelectionChange?: (selection: SelectionData | null) => void;
+  onColorPick?: (color: string) => void;
+  activeLayerId?: string;
 }>) {
   const tool = props.params.tool || "brush";
   const zoom = props.params.zoom || 100;
@@ -86,6 +89,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
   const selectionTool = props.params.selectionTool || "rect";
   const selectionMode = props.params.selectionMode || "replace";
   const onSelectionChange = props.params.onSelectionChange;
+  const onColorPick = props.params.onColorPick;
+  const activeLayerId = props.params.activeLayerId;
 
   return <UnifiedCanvas 
     tool={tool} 
@@ -101,6 +106,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
     selectionTool={selectionTool}
     selectionMode={selectionMode}
     onSelectionChange={onSelectionChange}
+    onColorPick={onColorPick}
+    activeLayerId={activeLayerId}
   />;
 }
 
@@ -590,10 +597,12 @@ function App() {
           selectionTool,
           selectionMode,
           onSelectionChange: setSelectionData,
+          onColorPick: setBrushColor,
+          activeLayerId,
         });
       }
     }
-  }, [currentTool, zoom, brushColor, brushSize, onionSkinSettings, currentFrame, totalFrames, showGrid, showGuides, selectionData, selectionTool, selectionMode]);
+  }, [currentTool, zoom, brushColor, brushSize, onionSkinSettings, currentFrame, totalFrames, showGrid, showGuides, selectionData, selectionTool, selectionMode, activeLayerId]);
 
   const updateColorPanel = useCallback(() => {
     if (apiRef.current) {

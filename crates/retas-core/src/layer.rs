@@ -30,6 +30,7 @@ pub enum LayerType {
     Guide,
     Sound,
     Adjustment,
+    Group,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
