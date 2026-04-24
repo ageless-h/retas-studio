@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 retas-core = { path = "../../crates/retas-core" }
+retas-io = { path = "../../crates/retas-io" }
 
 [features]
 default = ["custom-protocol"]

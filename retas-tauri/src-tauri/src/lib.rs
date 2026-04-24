@@ -9,6 +9,7 @@ use retas_core::Layer as RetasLayer;
 use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
 use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand, SnapshotCommand};
 use retas_core::advanced::brush::{BrushEngine, BrushSettings, BrushPoint, BrushType, BrushBlendMode};
+use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerInfo {
@@ -1044,6 +1045,103 @@ fn select_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn rename_layer(id: String, name: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "重命名图层");
+    
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    layer.base_mut().name = name;
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_layer_opacity(id: String, opacity: f64, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "设置图层不透明度");
+    
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    layer.base_mut().opacity = opacity.max(0.0).min(1.0);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn move_layer(id: String, new_index: usize, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "移动图层");
+    
+    let old_index = editor.document.timeline.layer_order.iter()
+        .position(|x| *x == layer_id)
+        .ok_or("Layer not found in order")?;
+    
+    let id = editor.document.timeline.layer_order.remove(old_index);
+    let insert_pos = new_index.min(editor.document.timeline.layer_order.len());
+    editor.document.timeline.layer_order.insert(insert_pos, id);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn export_image(
+    output_path: String,
+    format: String,
+    frame: Option<u32>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    
+    let img_format = ImageFormat::from_extension(&format)
+        .ok_or_else(|| format!("Unsupported format: {}", format))?;
+    
+    let options = ImageExportOptions::new(img_format)
+        .with_background(retas_core::Color8::new(255, 255, 255, 255));
+    
+    let frame_num = frame.unwrap_or(doc.timeline.current_frame);
+    let path = std::path::Path::new(&output_path);
+    
+    ImageExporter::export_document(doc, frame_num, path, &options)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn export_frame_sequence(
+    output_dir: String,
+    format: String,
+    start_frame: u32,
+    end_frame: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    
+    let img_format = ImageFormat::from_extension(&format)
+        .ok_or_else(|| format!("Unsupported format: {}", format))?;
+    
+    let dir = std::path::Path::new(&output_dir);
+    if !dir.exists() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    
+    let options = ImageExportOptions::new(img_format)
+        .with_background(retas_core::Color8::new(255, 255, 255, 255));
+    
+    let end = end_frame.min(doc.timeline.end_frame.saturating_sub(1));
+    for frame in start_frame..=end {
+        let filename = format!("frame_{:04}.{}", frame, img_format.extension());
+        let path = dir.join(filename);
+        ImageExporter::export_document(doc, frame, &path, &options)
+            .map_err(|e| format!("Frame {}: {}", frame, e))?;
+    }
+    
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -1086,6 +1184,11 @@ pub fn run() {
             invert_selection,
             apply_selection_to_layer,
             flood_fill_layer,
+            rename_layer,
+            set_layer_opacity,
+            move_layer,
+            export_image,
+            export_frame_sequence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -118,6 +118,21 @@ export async function selectLayer(id: string): Promise<void> {
   return safeInvoke("select_layer", { id });
 }
 
+export async function renameLayer(id: string, name: string): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("rename_layer", { id, name });
+}
+
+export async function setLayerOpacity(id: string, opacity: number): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("set_layer_opacity", { id, opacity });
+}
+
+export async function moveLayer(id: string, newIndex: number): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("move_layer", { id, newIndex });
+}
+
 export async function getFrameInfo(): Promise<FrameInfo> {
   if (!isTauri) return mockGetFrameInfo();
   const info = await safeInvoke<FrameInfo>("get_frame_info");
@@ -241,7 +256,8 @@ export async function createSelection(selection: SelectionData): Promise<void> {
   if (!isTauri) {
     return Promise.resolve();
   }
-  return safeInvoke("create_selection", { selection });
+  // Backend uses update_selection for both create and modify
+  return safeInvoke("update_selection", { selection });
 }
 
 export async function updateSelection(selection: SelectionData): Promise<void> {
@@ -279,11 +295,57 @@ export async function getSelectionBounds(): Promise<SelectionBounds | null> {
   return safeInvoke<SelectionBounds | null>("get_selection_bounds");
 }
 
-export async function applySelectionToLayer(layerId: string): Promise<void> {
+export async function applySelectionToLayer(layerId: string, operation: string): Promise<void> {
   if (!isTauri) {
     return Promise.resolve();
   }
-  return safeInvoke("apply_selection_to_layer", { layerId });
+  return safeInvoke("apply_selection_to_layer", { layerId, operation });
 }
 
+export async function floodFillLayer(
+  x: number,
+  y: number,
+  color: [number, number, number, number],
+  tolerance: number
+): Promise<void> {
+  if (!isTauri) {
+    return Promise.resolve();
+  }
+  return safeInvoke("flood_fill_layer", { x, y, color, tolerance });
+}
+
+export async function getDocumentInfo(): Promise<DocumentInfo> {
+  if (!isTauri) {
+    return { name: "Untitled", width: 1920, height: 1080, frame_rate: 24, total_frames: 100 };
+  }
+  return safeInvoke<DocumentInfo>("get_document_info");
+}
+
+export async function exportImage(
+  outputPath: string,
+  format: string,
+  frame?: number
+): Promise<void> {
+  if (!isTauri) {
+    return Promise.resolve();
+  }
+  return safeInvoke("export_image", { outputPath, format, frame });
+}
+
+export async function exportFrameSequence(
+  outputDir: string,
+  format: string,
+  startFrame: number,
+  endFrame: number
+): Promise<void> {
+  if (!isTauri) {
+    return Promise.resolve();
+  }
+  return safeInvoke("export_frame_sequence", {
+    outputDir,
+    format,
+    startFrame: startFrame - 1,
+    endFrame: endFrame - 1,
+  });
+}
 

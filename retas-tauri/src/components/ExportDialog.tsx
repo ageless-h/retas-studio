@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Button, Dialog, FormGroup, HTMLSelect, Intent } from "@blueprintjs/core";
+import { Button, Dialog, FormGroup, HTMLSelect, Intent, Callout, RadioGroup, Radio, NumericInput } from "@blueprintjs/core";
 import { Download, Film } from "lucide-react";
+import { exportImage, exportFrameSequence, getFrameInfo } from "../api";
+import { showSaveDialog } from "../utils/fileDialog";
 
 interface ExportDialogProps {
   isOpen: boolean;
@@ -10,13 +12,53 @@ interface ExportDialogProps {
 export default function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("high");
+  const [exportMode, setExportMode] = useState("current");
   const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const handleExport = async () => {
     setIsExporting(true);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setIsExporting(false);
-    onClose();
+    setError(null);
+    setSuccess(false);
+    
+    try {
+      if (exportMode === "current") {
+        // Export current frame as single image
+        const filters = format === "png"
+          ? [{ name: "PNG 图片", extensions: ["png"] }]
+          : [{ name: "JPEG 图片", extensions: ["jpg", "jpeg"] }];
+        
+        const path = await showSaveDialog(filters);
+        if (!path) {
+          setIsExporting(false);
+          return;
+        }
+        
+        await exportImage(path, format);
+        setSuccess(true);
+      } else {
+        // Export frame sequence to directory
+        const path = await showSaveDialog([
+          { name: `${format.toUpperCase()} 序列帧`, extensions: [format === "jpeg" ? "jpg" : format] },
+        ]);
+        if (!path) {
+          setIsExporting(false);
+          return;
+        }
+        
+        // Use directory of the selected file
+        const dir = path.substring(0, path.lastIndexOf("\\") || path.lastIndexOf("/")) || path;
+        const frameInfo = await getFrameInfo();
+        
+        await exportFrameSequence(dir, format, 1, frameInfo.total);
+        setSuccess(true);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -24,31 +66,37 @@ export default function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
       isOpen={isOpen}
       onClose={onClose}
       title="导出"
-      style={{ width: 400 }}
+      style={{ width: 420 }}
     >
       <div style={{ padding: 16 }}>
+        {error && (
+          <Callout intent={Intent.DANGER} style={{ marginBottom: 12 }}>
+            导出失败: {error}
+          </Callout>
+        )}
+        {success && (
+          <Callout intent={Intent.SUCCESS} style={{ marginBottom: 12 }}>
+            导出完成！
+          </Callout>
+        )}
+        
+        <FormGroup label="导出模式">
+          <RadioGroup
+            selectedValue={exportMode}
+            onChange={(e) => setExportMode((e.target as HTMLInputElement).value)}
+          >
+            <Radio label="当前帧" value="current" />
+            <Radio label="序列帧 (全部帧)" value="sequence" />
+          </RadioGroup>
+        </FormGroup>
+
         <FormGroup label="格式">
           <HTMLSelect
             value={format}
             onChange={(e) => setFormat(e.target.value)}
             options={[
-              { value: "png", label: "PNG 序列帧" },
-              { value: "jpeg", label: "JPEG 序列帧" },
-              { value: "mp4", label: "MP4 视频" },
-              { value: "gif", label: "GIF 动画" },
-              { value: "webm", label: "WebM 视频" },
-            ]}
-          />
-        </FormGroup>
-
-        <FormGroup label="质量">
-          <HTMLSelect
-            value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-            options={[
-              { value: "draft", label: "草稿 (50%)" },
-              { value: "medium", label: "中等 (75%)" },
-              { value: "high", label: "高质量 (100%)" },
+              { value: "png", label: "PNG" },
+              { value: "jpeg", label: "JPEG" },
             ]}
           />
         </FormGroup>

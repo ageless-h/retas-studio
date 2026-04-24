@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
-import { applyStrokePixels, compositeLayers, SelectionData } from "../api";
+import { applyStrokePixels, compositeLayers, floodFillLayer, SelectionData } from "../api";
 import { canvasMonitor } from "../utils/CanvasMonitor";
 
 export interface OnionSkinSettings {
@@ -394,6 +394,22 @@ export default function UnifiedCanvas({
         } else {
           setCurrentSelectionRect({ x: pos.x, y: pos.y, width: 0, height: 0 });
         }
+        return;
+      }
+      
+      if (tool === "fill") {
+        const pos = getCanvasPos(e);
+        // Parse hex color to RGBA tuple
+        const hex = color.replace("#", "");
+        const r = parseInt(hex.substring(0, 2), 16) || 0;
+        const g = parseInt(hex.substring(2, 4), 16) || 0;
+        const b = parseInt(hex.substring(4, 6), 16) || 0;
+        
+        floodFillLayer(Math.floor(pos.x), Math.floor(pos.y), [r, g, b, 255], 32)
+          .then(() => {
+            window.dispatchEvent(new CustomEvent("retas:state-changed"));
+          })
+          .catch((err) => console.error("Fill failed:", err));
         return;
       }
       
