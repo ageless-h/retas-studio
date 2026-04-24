@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Button, Dialog, FormGroup, HTMLSelect, Intent, Callout, RadioGroup, Radio, NumericInput } from "@blueprintjs/core";
+import { useState, useEffect } from "react";
+import { Button, Dialog, FormGroup, HTMLSelect, Intent, Callout, RadioGroup, Radio } from "@blueprintjs/core";
 import { Download, Film } from "lucide-react";
 import { exportImage, exportFrameSequence, getFrameInfo } from "../api";
 import { showSaveDialog } from "../utils/fileDialog";
@@ -120,6 +120,13 @@ export default function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
 export function ExportButton() {
   const [isOpen, setIsOpen] = useState(false);
 
+  // Listen for Ctrl+E keyboard shortcut event
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener("retas:open-export", handler);
+    return () => window.removeEventListener("retas:open-export", handler);
+  }, []);
+
   return (
     <>
       <Button
@@ -127,7 +134,7 @@ export function ExportButton() {
         small
         icon={<Film size={14} />}
         onClick={() => setIsOpen(true)}
-        title="导出"
+        title="导出 (Ctrl+E)"
       />
       <ExportDialog isOpen={isOpen} onClose={() => setIsOpen(false)} />
     </>

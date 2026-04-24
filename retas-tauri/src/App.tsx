@@ -163,7 +163,11 @@ function App() {
     setBrushSize(prev => Math.max(1, Math.min(100, prev + delta * 2)));
   }, []);
 
-  useKeyboardShortcuts(handleToolChange, handleBrushSizeChange);
+  const handleExportShortcut = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("retas:open-export"));
+  }, []);
+
+  useKeyboardShortcuts(handleToolChange, handleBrushSizeChange, handleExportShortcut);
   const { memoryInfo } = useCanvasKit();
   const { currentWorkspace } = useWorkspace();
   const apiRef = useRef<any>(null);

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button, ButtonGroup, Slider, Popover, Menu } from "@blueprintjs/core";
-import { Square, Circle, Pencil, Wand2, Plus, Minus, X } from "lucide-react";
+import { Square, Circle, Pencil, Wand2, Plus, Minus, X, Paintbrush, FlipVertical, Eraser } from "lucide-react";
+import { applySelectionToLayer, clearSelection } from "../api";
 
 export type SelectionToolType = "rect" | "ellipse" | "lasso" | "magicWand";
 export type SelectionMode = "replace" | "add" | "subtract" | "intersect";
@@ -93,8 +94,24 @@ export function SelectionToolPanel({
     }
   };
 
-  const handleClear = () => {
-    onSelectionChange(null);
+  const handleClear = async () => {
+    try {
+      await clearSelection();
+      onSelectionChange(null);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("清除选区失败:", e);
+      onSelectionChange(null);
+    }
+  };
+
+  const handleSelectionOp = async (operation: string) => {
+    try {
+      await applySelectionToLayer("", operation);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error(`选区操作 ${operation} 失败:`, e);
+    }
   };
 
   const settingsMenu = (
@@ -222,8 +239,14 @@ export function SelectionToolPanel({
 
         {selection && (
           <>
-            <Button small minimal onClick={handleClear}>
-              清除选区
+            <Button small minimal onClick={handleClear} icon={<Eraser size={12} />} title="清除选区 (Delete)">
+              清除
+            </Button>
+            <Button small minimal onClick={() => handleSelectionOp("fill")} icon={<Paintbrush size={12} />} title="填充选区">
+              填充
+            </Button>
+            <Button small minimal onClick={() => handleSelectionOp("invert")} icon={<FlipVertical size={12} />} title="反选">
+              反选
             </Button>
             {onApplySelection && (
               <Button small intent="primary" onClick={onApplySelection}>
