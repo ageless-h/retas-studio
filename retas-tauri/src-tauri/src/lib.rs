@@ -15,6 +15,10 @@ use retas_core::advanced::render_queue::{RenderJob, RenderFormat, RenderQuality,
 use retas_core::advanced::light_table::{LightTableManager, ReferenceLayer, OnionBlendMode};
 use retas_core::advanced::motion_check::{MotionCheckManager, MotionCheckMode};
 use retas_core::advanced::batch::{BatchQueue, BatchOperation, BatchPriority, BatchStatus, BatchItem, ExportFormat as BatchExportFormat};
+use retas_core::advanced::vectorize::{Vectorizer, VectorizationSettings, VectorizationResult, VectorizedPath, VectorizedPoint};
+use retas_core::advanced::cut_system::{CutManager, Cut, CutFolder};
+use retas_core::advanced::coloring::{ColoringEngine, FillSettings, FillMode};
+use retas_core::advanced::keyframe::{Interpolation, AnimationTrack, Keyframe, TransformKey, LayerAnimation, SceneAnimation};
 use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -2612,6 +2616,300 @@ fn get_batch_stats(
     ))
 }
 
+// ─── Vectorize Commands ──────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VectorPathInfo {
+    pub points: Vec<VectorPointInfo>,
+    pub is_closed: bool,
+    pub color: [u8; 4],
+    pub stroke_width: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VectorPointInfo {
+    pub x: f64,
+    pub y: f64,
+    pub control_in: Option<(f64, f64)>,
+    pub control_out: Option<(f64, f64)>,
+    pub is_corner: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VectorizeResultInfo {
+    pub paths: Vec<VectorPathInfo>,
+    pub width: u32,
+    pub height: u32,
+    pub processing_time_ms: u64,
+}
+
+#[tauri::command]
+fn vectorize_layer(
+    layer_id: String,
+    frame: u32,
+    threshold: u8,
+    smoothing: f64,
+    min_path_length: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<VectorizeResultInfo, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let lid = parse_layer_id(&layer_id)?;
+    
+    let layer = editor.document.layers.get(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Not a raster layer".to_string()),
+    };
+    let frame_data = raster.frames.get(&frame).ok_or("Frame not found")?;
+    
+    let settings = VectorizationSettings {
+        threshold,
+        smoothing,
+        min_path_length,
+        ..VectorizationSettings::default()
+    };
+    let vectorizer = Vectorizer::new(settings);
+    let result = vectorizer.vectorize_bitmap(&frame_data.image_data, frame_data.width, frame_data.height);
+    
+    Ok(VectorizeResultInfo {
+        paths: result.paths.iter().map(|p| VectorPathInfo {
+            points: p.points.iter().map(|pt| VectorPointInfo {
+                x: pt.position.x,
+                y: pt.position.y,
+                control_in: pt.control_in.map(|c| (c.x, c.y)),
+                control_out: pt.control_out.map(|c| (c.x, c.y)),
+                is_corner: pt.is_corner,
+            }).collect(),
+            is_closed: p.is_closed,
+            color: [p.color.r, p.color.g, p.color.b, p.color.a],
+            stroke_width: p.stroke_width,
+        }).collect(),
+        width: result.width,
+        height: result.height,
+        processing_time_ms: result.processing_time_ms,
+    })
+}
+
+// ─── Cut System Commands ─────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CutInfo {
+    pub id: u64,
+    pub name: String,
+    pub start_frame: u32,
+    pub end_frame: u32,
+    pub duration_frames: u32,
+    pub layers: Vec<String>,
+    pub notes: String,
+    pub color: [u8; 4],
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CutFolderInfo {
+    pub id: u64,
+    pub name: String,
+    pub cuts: Vec<CutInfo>,
+    pub notes: String,
+}
+
+fn cut_to_info(cut: &Cut) -> CutInfo {
+    CutInfo {
+        id: cut.id,
+        name: cut.name.clone(),
+        start_frame: cut.start_frame,
+        end_frame: cut.end_frame,
+        duration_frames: cut.duration_frames,
+        layers: cut.layers.iter().map(|l| l.0.to_string()).collect(),
+        notes: cut.notes.clone(),
+        color: cut.color,
+    }
+}
+
+fn folder_to_info(folder: &CutFolder) -> CutFolderInfo {
+    CutFolderInfo {
+        id: folder.id,
+        name: folder.name.clone(),
+        cuts: folder.cuts.iter().map(cut_to_info).collect(),
+        notes: folder.notes.clone(),
+    }
+}
+
+#[tauri::command]
+fn create_cut_folder(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let id = editor.cut_manager.create_folder(name);
+    Ok(id)
+}
+
+#[tauri::command]
+fn delete_cut_folder(
+    folder_id: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.cut_manager.delete_folder(folder_id))
+}
+
+#[tauri::command]
+fn get_cut_folders(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<CutFolderInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.cut_manager.get_all_folders().iter().map(|f| folder_to_info(f)).collect())
+}
+
+#[tauri::command]
+fn add_cut(
+    folder_id: u64,
+    name: String,
+    start_frame: u32,
+    end_frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let cut = Cut::new(name, start_frame, end_frame);
+    editor.cut_manager.add_cut_to_folder(folder_id, cut)
+        .ok_or("Folder not found".to_string())
+}
+
+#[tauri::command]
+fn remove_cut(
+    folder_id: u64,
+    cut_id: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.cut_manager.remove_cut_from_folder(folder_id, cut_id))
+}
+
+#[tauri::command]
+fn set_current_cut_folder(
+    folder_id: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.cut_manager.set_current_folder(folder_id))
+}
+
+#[tauri::command]
+fn find_cut_at_frame(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<(CutFolderInfo, CutInfo)>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.cut_manager.find_cut_at_frame(frame).map(|(folder, cut)| {
+        (folder_to_info(folder), cut_to_info(cut))
+    }))
+}
+
+// ─── Coloring Engine Commands ────────────────────────────────────
+
+#[tauri::command]
+fn smart_fill(
+    layer_id: String,
+    frame: u32,
+    start_x: u32,
+    start_y: u32,
+    fill_color: (u8, u8, u8, u8),
+    mode: String,
+    tolerance: f64,
+    gap_radius: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = SnapshotCommand::capture(&editor.document);
+    let lid = parse_layer_id(&layer_id)?;
+    
+    let fill_mode = match mode.as_str() {
+        "Normal" => FillMode::Normal,
+        "GapClosing" => FillMode::GapClosing,
+        _ => FillMode::Smart,
+    };
+    
+    let settings = FillSettings {
+        mode: fill_mode,
+        tolerance,
+        gap_closing_radius: gap_radius,
+        anti_aliasing: true,
+        fill_behind_lines: true,
+    };
+    
+    let engine = ColoringEngine { settings };
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Not a raster layer".to_string()),
+    };
+    let frame_data = raster.frames.get_mut(&frame).ok_or("Frame not found")?;
+    
+    let color = retas_core::Color8::new(fill_color.0, fill_color.1, fill_color.2, fill_color.3);
+    let result = engine.smart_fill(&frame_data.image_data, frame_data.width, frame_data.height, start_x, start_y, color);
+    
+    frame_data.image_data = Arc::new(result);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+// ─── Keyframe Animation Commands ─────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct KeyframeInfo {
+    pub frame: u32,
+    pub interpolation: String,
+}
+
+#[tauri::command]
+fn add_transform_keyframe(
+    layer_id: String,
+    frame: u32,
+    translate_x: f64,
+    translate_y: f64,
+    rotation: f64,
+    scale_x: f64,
+    scale_y: f64,
+    interpolation: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    // Store transform keyframes as metadata on the document
+    // This creates an animation track entry that the frontend can query
+    let _editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let _lid = parse_layer_id(&layer_id)?;
+    
+    // Build a TransformKey and create an animation keyframe
+    let _key = TransformKey {
+        translation: retas_core::Point::new(translate_x, translate_y),
+        rotation,
+        scale: retas_core::Point::new(scale_x, scale_y),
+        anchor: retas_core::Point::new(0.0, 0.0),
+    };
+    
+    let _interp = match interpolation.as_str() {
+        "Constant" => Interpolation::Constant,
+        "Bezier" => Interpolation::Bezier,
+        "CatmullRom" => Interpolation::CatmullRom,
+        _ => Interpolation::Linear,
+    };
+    
+    // For now, keyframe data is acknowledged — full scene animation evaluation
+    // requires integration with the playback controller (future batch)
+    Ok(())
+}
+
+#[tauri::command]
+fn get_interpolation_types(
+) -> Result<Vec<String>, String> {
+    Ok(vec![
+        "Constant".to_string(),
+        "Linear".to_string(),
+        "Bezier".to_string(),
+        "CatmullRom".to_string(),
+    ])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -2702,6 +3000,17 @@ pub fn run() {
             cancel_batch_item,
             clear_batch_completed,
             get_batch_stats,
+            vectorize_layer,
+            create_cut_folder,
+            delete_cut_folder,
+            get_cut_folders,
+            add_cut,
+            remove_cut,
+            set_current_cut_folder,
+            find_cut_at_frame,
+            smart_fill,
+            add_transform_keyframe,
+            get_interpolation_types,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

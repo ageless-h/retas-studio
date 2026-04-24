@@ -697,3 +697,123 @@ export async function getBatchStats(): Promise<[number, number, number, number]>
   return safeInvoke("get_batch_stats", {});
 }
 
+// ─── Vectorize ───────────────────────────────────────────────────
+
+export interface VectorPointInfo {
+  x: number;
+  y: number;
+  control_in: [number, number] | null;
+  control_out: [number, number] | null;
+  is_corner: boolean;
+}
+
+export interface VectorPathInfo {
+  points: VectorPointInfo[];
+  is_closed: boolean;
+  color: [number, number, number, number];
+  stroke_width: number;
+}
+
+export interface VectorizeResultInfo {
+  paths: VectorPathInfo[];
+  width: number;
+  height: number;
+  processing_time_ms: number;
+}
+
+export async function vectorizeLayer(
+  layerId: string, frame: number,
+  threshold: number, smoothing: number, minPathLength: number
+): Promise<VectorizeResultInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("vectorize_layer", { layerId, frame, threshold, smoothing, minPathLength });
+}
+
+// ─── Cut System ──────────────────────────────────────────────────
+
+export interface CutInfo {
+  id: number;
+  name: string;
+  start_frame: number;
+  end_frame: number;
+  duration_frames: number;
+  layers: string[];
+  notes: string;
+  color: [number, number, number, number];
+}
+
+export interface CutFolderInfo {
+  id: number;
+  name: string;
+  cuts: CutInfo[];
+  notes: string;
+}
+
+export async function createCutFolder(name: string): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("create_cut_folder", { name });
+}
+
+export async function deleteCutFolder(folderId: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("delete_cut_folder", { folderId });
+}
+
+export async function getCutFolders(): Promise<CutFolderInfo[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_cut_folders", {});
+}
+
+export async function addCut(
+  folderId: number, name: string, startFrame: number, endFrame: number
+): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_cut", { folderId, name, startFrame, endFrame });
+}
+
+export async function removeCut(folderId: number, cutId: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("remove_cut", { folderId, cutId });
+}
+
+export async function setCurrentCutFolder(folderId: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("set_current_cut_folder", { folderId });
+}
+
+export async function findCutAtFrame(frame: number): Promise<[CutFolderInfo, CutInfo] | null> {
+  if (!isTauri) return null;
+  return safeInvoke("find_cut_at_frame", { frame });
+}
+
+// ─── Coloring Engine ─────────────────────────────────────────────
+
+export async function smartFill(
+  layerId: string, frame: number,
+  startX: number, startY: number,
+  fillColor: [number, number, number, number],
+  mode: string, tolerance: number, gapRadius: number
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("smart_fill", { layerId, frame, startX, startY, fillColor, mode, tolerance, gapRadius });
+}
+
+// ─── Keyframe Animation ─────────────────────────────────────────
+
+export async function addTransformKeyframe(
+  layerId: string, frame: number,
+  translateX: number, translateY: number,
+  rotation: number, scaleX: number, scaleY: number,
+  interpolation: string
+): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("add_transform_keyframe", {
+    layerId, frame, translateX, translateY, rotation, scaleX, scaleY, interpolation,
+  });
+}
+
+export async function getInterpolationTypes(): Promise<string[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_interpolation_types", {});
+}
+

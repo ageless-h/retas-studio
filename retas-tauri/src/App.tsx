@@ -36,6 +36,7 @@ import EffectsPanel from "./components/EffectsPanel";
 import RenderQueuePanel from "./components/RenderQueuePanel";
 import LightTablePanel from "./components/LightTablePanel";
 import MotionCheckPanel from "./components/MotionCheckPanel";
+import CutSystemPanel from "./components/CutSystemPanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand" | "eyedropper";
 
@@ -356,6 +357,7 @@ const components = {
   renderQueue: RenderQueuePanel,
   lightTable: LightTablePanel,
   motionCheck: MotionCheckPanel,
+  cutSystem: CutSystemPanel,
   xsheet: XSheetWrapper,
 };
 
@@ -569,6 +571,13 @@ function App() {
         position: { referencePanel: "lightTable", direction: "below" },
         params: { currentFrame },
       });
+      api.addPanel({
+        id: "cutSystem",
+        component: "cutSystem",
+        title: "卡系统",
+        position: { referencePanel: "motionCheck", direction: "below" },
+        params: { currentFrame },
+      });
     } else if (workspace === "coloring") {
       api.addPanel({
         id: "color",
@@ -661,7 +670,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue", "lightTable", "motionCheck"];
+    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue", "lightTable", "motionCheck", "cutSystem"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {
