@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
-import { drawStroke, applyStrokePixels, compositeLayers, DrawCommand, SelectionData } from "../api";
+import { applyStrokePixels, compositeLayers, SelectionData } from "../api";
 import { canvasMonitor } from "../utils/CanvasMonitor";
 
 export interface OnionSkinSettings {
@@ -528,31 +528,25 @@ export default function UnifiedCanvas({
 
       if (pointsRef.current.length > 1) {
         try {
-          if (strokeSurfaceRef.current) {
-            const strokeImage = strokeSurfaceRef.current.makeImageSnapshot();
-            if (strokeImage) {
-              const pixels = strokeImage.readPixels(0, 0, {
-                width: DOC_WIDTH,
-                height: DOC_HEIGHT,
-                colorType: canvasKit.ColorType.RGBA_8888,
-                alphaType: canvasKit.AlphaType.Unpremul,
-                colorSpace: canvasKit.ColorSpace.SRGB,
-              });
-              
-              if (pixels) {
-                await applyStrokePixels(new Uint8Array(pixels));
-              }
-              strokeImage.delete();
+          if (!strokeSurfaceRef.current || !canvasKit) {
+            console.warn("strokeSurface not initialized");
+            return;
+          }
+          
+          const strokeImage = strokeSurfaceRef.current.makeImageSnapshot();
+          if (strokeImage) {
+            const pixels = strokeImage.readPixels(0, 0, {
+              width: DOC_WIDTH,
+              height: DOC_HEIGHT,
+              colorType: canvasKit.ColorType.RGBA_8888,
+              alphaType: canvasKit.AlphaType.Unpremul,
+              colorSpace: canvasKit.ColorSpace.SRGB,
+            });
+            
+            if (pixels) {
+              await applyStrokePixels(new Uint8Array(pixels));
             }
-          } else {
-            const command: DrawCommand = {
-              tool,
-              points: pointsRef.current,
-              color: hexToRgb(color),
-              size: brushSize,
-              layerId: "current",
-            };
-            await drawStroke(command);
+            strokeImage.delete();
           }
           window.dispatchEvent(new CustomEvent("retas:state-changed"));
         } catch (e) {

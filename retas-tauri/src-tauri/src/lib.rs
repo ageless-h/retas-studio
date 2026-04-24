@@ -187,7 +187,6 @@ fn get_frame_info(state: State<Arc<AppState>>) -> Result<FrameInfo, String> {
 
 #[tauri::command]
 fn set_current_frame(frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     doc.timeline.current_frame = frame;
     Ok(())
@@ -364,28 +363,30 @@ fn apply_stroke_pixels(
         if chunk.len() < 4 {
             continue;
         }
-        let alpha = chunk[3] as f64 / 255.0;
-        if alpha > 0.0 {
-            let idx = i * 4;
-            let dst_alpha = frame_data[idx + 3] as f64 / 255.0;
+        
+        let src_alpha = chunk[3];
+        if src_alpha == 0 {
+            continue;
+        }
+        
+        let idx = i * 4;
+        let dst_alpha = frame_data[idx + 3];
+        
+        if dst_alpha == 0 {
+            frame_data[idx] = chunk[0];
+            frame_data[idx + 1] = chunk[1];
+            frame_data[idx + 2] = chunk[2];
+            frame_data[idx + 3] = src_alpha;
+        } else {
+            let src_a = src_alpha as f64 / 255.0;
+            let dst_a = dst_alpha as f64 / 255.0;
+            let out_a = src_a + dst_a * (1.0 - src_a);
             
-            if chunk[3] == 0 {
-                continue;
-            }
-
-            if dst_alpha == 0.0 {
-                frame_data[idx] = chunk[0];
-                frame_data[idx + 1] = chunk[1];
-                frame_data[idx + 2] = chunk[2];
-                frame_data[idx + 3] = chunk[3];
-            } else {
-                let out_alpha = alpha + dst_alpha * (1.0 - alpha);
-                if out_alpha > 0.0 {
-                    frame_data[idx] = ((chunk[0] as f64 * alpha + frame_data[idx] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
-                    frame_data[idx + 1] = ((chunk[1] as f64 * alpha + frame_data[idx + 1] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
-                    frame_data[idx + 2] = ((chunk[2] as f64 * alpha + frame_data[idx + 2] as f64 * dst_alpha * (1.0 - alpha)) / out_alpha) as u8;
-                    frame_data[idx + 3] = (out_alpha * 255.0) as u8;
-                }
+            if out_a > 0.0 {
+                frame_data[idx] = ((chunk[0] as f64 * src_a + frame_data[idx] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 1] = ((chunk[1] as f64 * src_a + frame_data[idx + 1] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 2] = ((chunk[2] as f64 * src_a + frame_data[idx + 2] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 3] = (out_a * 255.0) as u8;
             }
         }
     }
@@ -597,57 +598,6 @@ fn copy_frame(layer_id: String, from_frame: u32, to_frame: u32, state: State<Arc
     doc.copy_frame(layer_id, from_frame, to_frame)
 }
 
-#[tauri::command]
-fn create_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    
-    let tool = match selection.selection_type.as_str() {
-        "rect" => SelectionTool::Rectangular,
-        "ellipse" => SelectionTool::Elliptical,
-        "lasso" => SelectionTool::Lasso,
-        "magicWand" => SelectionTool::MagicWand,
-        _ => SelectionTool::Rectangular,
-    };
-    
-    let mode = match selection.mode.as_str() {
-        "replace" => RetasSelectionMode::Replace,
-        "add" => RetasSelectionMode::Add,
-        "subtract" => RetasSelectionMode::Subtract,
-        "intersect" => RetasSelectionMode::Intersect,
-        _ => RetasSelectionMode::Replace,
-    };
-    
-    let mask = if selection.selection_type == "lasso" {
-        let points: Vec<retas_core::Point> = selection.points.iter()
-            .map(|(x, y)| retas_core::Point::new(*x, *y))
-            .collect();
-        let bounds = calculate_points_bounds(&points);
-        SelectionMask::Lasso { points, bounds }
-    } else if let Some((x, y, w, h)) = selection.rect {
-        let rect = retas_core::Rect::new(x, y, w, h);
-        if selection.selection_type == "ellipse" {
-            SelectionMask::Elliptical { rect }
-        } else {
-            SelectionMask::Rectangular { rect }
-        }
-    } else {
-        SelectionMask::None
-    };
-    
-    let new_selection = Selection {
-        tool,
-        mode,
-        mask,
-        feather: selection.feather,
-        anti_aliased: true,
-        is_active: true,
-    };
-    
-    doc.selection = Some(new_selection);
-    Ok(())
-}
-
 fn calculate_points_bounds(points: &[retas_core::Point]) -> retas_core::Rect {
     if points.is_empty() {
         return retas_core::Rect::ZERO;
@@ -670,7 +620,6 @@ fn calculate_points_bounds(points: &[retas_core::Point]) -> retas_core::Rect {
 
 #[tauri::command]
 fn clear_selection(state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     doc.selection = None;
     Ok(())
@@ -739,7 +688,6 @@ fn get_selection_bounds(state: State<Arc<AppState>>) -> Result<Option<SelectionB
 
 #[tauri::command]
 fn invert_selection(state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     
     if let Some(sel) = &doc.selection {
@@ -797,19 +745,85 @@ fn update_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>
         is_active: true,
     };
     
-    doc.selection = Some(new_selection);
+    if mode == RetasSelectionMode::Replace {
+        doc.selection = Some(new_selection);
+    } else if let Some(existing) = &doc.selection {
+        doc.selection = Some(existing.combine(&new_selection, mode));
+    } else {
+        doc.selection = Some(new_selection);
+    }
+    
     Ok(())
 }
 
 #[tauri::command]
-fn apply_selection_to_layer(layer_id: String, state: State<Arc<AppState>>) -> Result<(), String> {
+fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&layer_id)?;
     record_history(&state)?;
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     
-    let selection = doc.selection.as_ref().ok_or("No active selection")?;
+    let selection = doc.selection.clone().ok_or("No active selection")?;
     if !selection.is_active {
         return Err("No active selection".to_string());
+    }
+    
+    let current_frame = doc.timeline.current_frame;
+    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support selection operations".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let _width = frame.width;
+    let _height = frame.height;
+    let pixels = frame.get_image_data_mut();
+    
+    let bitmap = selection.to_bitmap();
+    let mask_data = match &bitmap {
+        SelectionMask::Bitmap { data, .. } => data.clone(),
+        _ => return Err("Failed to convert selection to bitmap".to_string()),
+    };
+    
+    match operation.as_str() {
+        "clear" => {
+            for (i, &alpha) in mask_data.iter().enumerate() {
+                if alpha > 0 {
+                    let idx = i * 4;
+                    if idx + 3 < pixels.len() {
+                        pixels[idx] = 0;
+                        pixels[idx + 1] = 0;
+                        pixels[idx + 2] = 0;
+                        pixels[idx + 3] = 0;
+                    }
+                }
+            }
+        }
+        "fill" => {
+            for (i, &alpha) in mask_data.iter().enumerate() {
+                if alpha > 0 {
+                    let idx = i * 4;
+                    if idx + 3 < pixels.len() {
+                        pixels[idx] = 255;
+                        pixels[idx + 1] = 255;
+                        pixels[idx + 2] = 255;
+                        pixels[idx + 3] = 255;
+                    }
+                }
+            }
+        }
+        "invert" => {
+            for (i, &alpha) in mask_data.iter().enumerate() {
+                if alpha > 0 {
+                    let idx = i * 4;
+                    if idx + 3 < pixels.len() {
+                        let current_alpha = pixels[idx + 3];
+                        pixels[idx + 3] = 255 - current_alpha;
+                    }
+                }
+            }
+        }
+        _ => return Err(format!("Unknown operation: {}", operation)),
     }
     
     Ok(())
@@ -818,7 +832,6 @@ fn apply_selection_to_layer(layer_id: String, state: State<Arc<AppState>>) -> Re
 #[tauri::command]
 fn select_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&id)?;
-    record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     
     if doc.layers.contains_key(&layer_id) {
@@ -864,7 +877,6 @@ pub fn run() {
             insert_frames,
             delete_frames,
             copy_frame,
-            create_selection,
             update_selection,
             clear_selection,
             get_selection,

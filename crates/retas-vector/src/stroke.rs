@@ -198,7 +198,7 @@ impl Stroke {
             return point.distance_to(line_start);
         }
 
-        let t = ((point.x - line_start.x) * dx + (point.y - line_start.y) * dy / len_sq).max(0.0).min(1.0);
+        let t = (((point.x - line_start.x) * dx + (point.y - line_start.y) * dy) / len_sq).max(0.0).min(1.0);
         let proj_x = line_start.x + t * dx;
         let proj_y = line_start.y + t * dy;
 
