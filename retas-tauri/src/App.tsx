@@ -37,6 +37,7 @@ import RenderQueuePanel from "./components/RenderQueuePanel";
 import LightTablePanel from "./components/LightTablePanel";
 import MotionCheckPanel from "./components/MotionCheckPanel";
 import CutSystemPanel from "./components/CutSystemPanel";
+import PerspectiveGuidePanel from "./components/PerspectiveGuidePanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand" | "eyedropper";
 
@@ -358,6 +359,7 @@ const components = {
   lightTable: LightTablePanel,
   motionCheck: MotionCheckPanel,
   cutSystem: CutSystemPanel,
+  perspectiveGuide: PerspectiveGuidePanel,
   xsheet: XSheetWrapper,
 };
 
@@ -542,6 +544,12 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
         params: { color: brushColor, onColorChange: setBrushColor, brushSize, onBrushSizeChange: setBrushSize },
       });
+      api.addPanel({
+        id: "perspectiveGuide",
+        component: "perspectiveGuide",
+        title: "透视参考线",
+        position: { referencePanel: "color", direction: "below" },
+      });
     } else if (workspace === "animation") {
       api.addPanel({
         id: "animationProps",
@@ -670,7 +678,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue", "lightTable", "motionCheck", "cutSystem"];
+    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue", "lightTable", "motionCheck", "cutSystem", "perspectiveGuide"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {

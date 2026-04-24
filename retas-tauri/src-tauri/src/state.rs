@@ -6,6 +6,7 @@ use retas_core::advanced::light_table::LightTableManager;
 use retas_core::advanced::motion_check::MotionCheckManager;
 use retas_core::advanced::batch::BatchQueue;
 use retas_core::advanced::cut_system::CutManager;
+use retas_core::advanced::guides::GuideLayer;
 
 /// Unified editor state behind a single Mutex.
 /// Eliminates the 3-Mutex deadlock class (Issue #17).
@@ -17,6 +18,7 @@ pub struct EditorState {
     pub motion_check: MotionCheckManager,
     pub batch_queue: BatchQueue,
     pub cut_manager: CutManager,
+    pub guide_layer: GuideLayer,
 }
 
 impl EditorState {
@@ -62,6 +64,7 @@ impl EditorState {
             motion_check: MotionCheckManager::new(),
             batch_queue: BatchQueue::new(),
             cut_manager: CutManager::new(),
+            guide_layer: GuideLayer::new("默认参考线"),
         }
     }
 }

@@ -817,3 +817,137 @@ export async function getInterpolationTypes(): Promise<string[]> {
   return safeInvoke("get_interpolation_types", {});
 }
 
+// ─── Perspective Guides ──────────────────────────────────────────
+
+export interface PerspectiveGuideInfo {
+  id: number;
+  vanishing_points: [number, number][];
+  horizon_y: number | null;
+  grid_enabled: boolean;
+  visible: boolean;
+}
+
+export interface GuideInfo {
+  horizontal: [number, number][];
+  vertical: [number, number][];
+  perspective: PerspectiveGuideInfo[];
+}
+
+export interface PerspectiveLineInfo {
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  color: [number, number, number, number];
+  line_type: string;
+}
+
+export async function getGuides(): Promise<GuideInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("get_guides", {});
+}
+
+export async function addHorizontalGuide(y: number): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_horizontal_guide", { y });
+}
+
+export async function addVerticalGuide(x: number): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_vertical_guide", { x });
+}
+
+export async function addOnePointPerspective(x: number, y: number): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_one_point_perspective", { x, y });
+}
+
+export async function addTwoPointPerspective(
+  vp1X: number, vp1Y: number, vp2X: number, vp2Y: number, horizonY: number
+): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("add_two_point_perspective", { vp1X, vp1Y, vp2X, vp2Y, horizonY });
+}
+
+export async function removeGuide(guideId: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("remove_guide", { guideId });
+}
+
+export async function getPerspectiveLines(
+  canvasWidth: number, canvasHeight: number
+): Promise<PerspectiveLineInfo[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_perspective_lines", { canvasWidth, canvasHeight });
+}
+
+// ─── Timeline Markers ────────────────────────────────────────────
+
+export interface MarkerInfo {
+  frame: number;
+  name: string;
+  color: [number, number, number, number];
+}
+
+export async function addTimelineMarker(frame: number, name: string): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("add_timeline_marker", { frame, name });
+}
+
+export async function removeTimelineMarker(frame: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("remove_timeline_marker", { frame });
+}
+
+export async function getTimelineMarkers(): Promise<MarkerInfo[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_timeline_markers", {});
+}
+
+export async function setPlaybackRange(startFrame: number, endFrame: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_playback_range", { startFrame, endFrame });
+}
+
+export async function getPlaybackRange(): Promise<[number, number, number]> {
+  if (!isTauri) return [0, 100, 24];
+  return safeInvoke("get_playback_range", {});
+}
+
+// ─── Print / Document ────────────────────────────────────────────
+
+export interface PrintSettingsInfo {
+  paper_size: string;
+  orientation: string;
+  margins: [number, number, number, number];
+  scale: number;
+  fit_to_page: boolean;
+  crop_marks: boolean;
+  frame_numbers: boolean;
+}
+
+export async function getPrintSettings(): Promise<PrintSettingsInfo | null> {
+  if (!isTauri) return null;
+  return safeInvoke("get_print_settings", {});
+}
+
+export async function getPaperSizes(): Promise<[string, number, number][]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_paper_sizes", {});
+}
+
+export async function getDocumentStats(): Promise<[number, number, number, number, number]> {
+  if (!isTauri) return [0, 0, 0, 0, 0];
+  return safeInvoke("get_document_stats", {});
+}
+
+export async function setDocumentFps(fps: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_document_fps", { fps });
+}
+
+export async function setDocumentName(name: string): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("set_document_name", { name });
+}
+

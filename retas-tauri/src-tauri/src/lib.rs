@@ -19,6 +19,9 @@ use retas_core::advanced::vectorize::{Vectorizer, VectorizationSettings, Vectori
 use retas_core::advanced::cut_system::{CutManager, Cut, CutFolder};
 use retas_core::advanced::coloring::{ColoringEngine, FillSettings, FillMode};
 use retas_core::advanced::keyframe::{Interpolation, AnimationTrack, Keyframe, TransformKey, LayerAnimation, SceneAnimation};
+use retas_core::advanced::guides::{GuideLayer, PerspectiveGuide, PerspectiveLine, PerspectiveLineType};
+use retas_core::advanced::animation::TimelineMarker;
+use retas_core::advanced::print::{PrintSettings, PaperSize, Orientation, Margins, PrintJobBuilder};
 use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -2910,6 +2913,275 @@ fn get_interpolation_types(
     ])
 }
 
+// ─── Perspective Guide Commands ──────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GuideInfo {
+    pub horizontal: Vec<(u64, f64)>,
+    pub vertical: Vec<(u64, f64)>,
+    pub perspective: Vec<PerspectiveGuideInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PerspectiveGuideInfo {
+    pub id: u64,
+    pub vanishing_points: Vec<(f64, f64)>,
+    pub horizon_y: Option<f64>,
+    pub grid_enabled: bool,
+    pub visible: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PerspectiveLineInfo {
+    pub start_x: f64,
+    pub start_y: f64,
+    pub end_x: f64,
+    pub end_y: f64,
+    pub color: [u8; 4],
+    pub line_type: String,
+}
+
+#[tauri::command]
+fn get_guides(
+    state: State<'_, Arc<AppState>>,
+) -> Result<GuideInfo, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let gl = &editor.guide_layer;
+    Ok(GuideInfo {
+        horizontal: gl.horizontal_guides.iter().map(|g| (g.id, g.y)).collect(),
+        vertical: gl.vertical_guides.iter().map(|g| (g.id, g.x)).collect(),
+        perspective: gl.perspective_guides.iter().map(|pg| PerspectiveGuideInfo {
+            id: pg.id,
+            vanishing_points: pg.vanishing_points.iter().map(|vp| (vp.position.x, vp.position.y)).collect(),
+            horizon_y: pg.horizon_line.as_ref().map(|h| h.y),
+            grid_enabled: pg.grid_enabled,
+            visible: pg.visible,
+        }).collect(),
+    })
+}
+
+#[tauri::command]
+fn add_horizontal_guide(
+    y: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.guide_layer.add_horizontal_guide(y))
+}
+
+#[tauri::command]
+fn add_vertical_guide(
+    x: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.guide_layer.add_vertical_guide(x))
+}
+
+#[tauri::command]
+fn add_one_point_perspective(
+    x: f64, y: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.guide_layer.add_one_point_perspective(retas_core::Point::new(x, y)))
+}
+
+#[tauri::command]
+fn add_two_point_perspective(
+    vp1_x: f64, vp1_y: f64,
+    vp2_x: f64, vp2_y: f64,
+    horizon_y: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.guide_layer.add_two_point_perspective(
+        retas_core::Point::new(vp1_x, vp1_y),
+        retas_core::Point::new(vp2_x, vp2_y),
+        horizon_y,
+    ))
+}
+
+#[tauri::command]
+fn remove_guide(
+    guide_id: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.guide_layer.remove_guide(guide_id))
+}
+
+#[tauri::command]
+fn get_perspective_lines(
+    canvas_width: f64,
+    canvas_height: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PerspectiveLineInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let lines = editor.guide_layer.get_perspective_lines(canvas_width, canvas_height);
+    Ok(lines.iter().map(|l| PerspectiveLineInfo {
+        start_x: l.start.x,
+        start_y: l.start.y,
+        end_x: l.end.x,
+        end_y: l.end.y,
+        color: [l.color.r, l.color.g, l.color.b, l.color.a],
+        line_type: format!("{:?}", l.line_type),
+    }).collect())
+}
+
+// ─── Timeline Marker Commands ────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MarkerInfo {
+    pub frame: u32,
+    pub name: String,
+    pub color: [u8; 4],
+}
+
+#[tauri::command]
+fn add_timeline_marker(
+    frame: u32,
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let marker = TimelineMarker::new(frame, name);
+    editor.document.timeline.markers.push(marker);
+    editor.document.timeline.markers.sort_by_key(|m| m.frame);
+    editor.document.timeline.markers.dedup_by_key(|m| m.frame);
+    Ok(())
+}
+
+#[tauri::command]
+fn remove_timeline_marker(
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let len = editor.document.timeline.markers.len();
+    editor.document.timeline.markers.retain(|m| m.frame != frame);
+    Ok(editor.document.timeline.markers.len() != len)
+}
+
+#[tauri::command]
+fn get_timeline_markers(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<MarkerInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.document.timeline.markers.iter().map(|m| MarkerInfo {
+        frame: m.frame,
+        name: m.name.clone(),
+        color: [m.color.r, m.color.g, m.color.b, m.color.a],
+    }).collect())
+}
+
+#[tauri::command]
+fn set_playback_range(
+    start_frame: u32,
+    end_frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.document.timeline.start_frame = start_frame;
+    editor.document.timeline.end_frame = end_frame;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_playback_range(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(u32, u32, f64), String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok((
+        editor.document.timeline.start_frame,
+        editor.document.timeline.end_frame,
+        editor.document.timeline.fps,
+    ))
+}
+
+// ─── Print Settings Commands ─────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PrintSettingsInfo {
+    pub paper_size: String,
+    pub orientation: String,
+    pub margins: (f64, f64, f64, f64),
+    pub scale: f64,
+    pub fit_to_page: bool,
+    pub crop_marks: bool,
+    pub frame_numbers: bool,
+}
+
+#[tauri::command]
+fn get_print_settings(
+) -> Result<PrintSettingsInfo, String> {
+    let settings = PrintSettings::default();
+    let (w, h) = settings.paper_size.dimensions_mm();
+    Ok(PrintSettingsInfo {
+        paper_size: format!("A4 ({:.0}x{:.0}mm)", w, h),
+        orientation: format!("{:?}", settings.orientation),
+        margins: (settings.margins.top, settings.margins.bottom, settings.margins.left, settings.margins.right),
+        scale: settings.scale,
+        fit_to_page: settings.fit_to_page,
+        crop_marks: settings.crop_marks,
+        frame_numbers: settings.frame_numbers,
+    })
+}
+
+#[tauri::command]
+fn get_paper_sizes(
+) -> Result<Vec<(String, f64, f64)>, String> {
+    Ok(vec![
+        ("A4".to_string(), 210.0, 297.0),
+        ("A3".to_string(), 297.0, 420.0),
+        ("Letter".to_string(), 215.9, 279.4),
+        ("Legal".to_string(), 215.9, 355.6),
+        ("Tabloid".to_string(), 279.4, 431.8),
+    ])
+}
+
+// ─── Document Metadata Commands ──────────────────────────────────
+
+#[tauri::command]
+fn get_document_stats(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(usize, u32, u32, usize, f64), String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    let layer_count = doc.layers.len();
+    let width = doc.settings.resolution.width as u32;
+    let height = doc.settings.resolution.height as u32;
+    let total_frames = doc.timeline.layer_order.iter()
+        .filter_map(|lid| doc.layers.get(lid))
+        .map(|l| match l {
+            RetasLayer::Raster(r) => r.frames.len(),
+            _ => 0,
+        })
+        .sum();
+    let fps = doc.timeline.fps;
+    Ok((layer_count, width, height, total_frames, fps))
+}
+
+#[tauri::command]
+fn set_document_fps(
+    fps: f64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.document.timeline.fps = fps.max(1.0).min(120.0);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_document_name(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.document.settings.name = name;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -3011,6 +3283,23 @@ pub fn run() {
             smart_fill,
             add_transform_keyframe,
             get_interpolation_types,
+            get_guides,
+            add_horizontal_guide,
+            add_vertical_guide,
+            add_one_point_perspective,
+            add_two_point_perspective,
+            remove_guide,
+            get_perspective_lines,
+            add_timeline_marker,
+            remove_timeline_marker,
+            get_timeline_markers,
+            set_playback_range,
+            get_playback_range,
+            get_print_settings,
+            get_paper_sizes,
+            get_document_stats,
+            set_document_fps,
+            set_document_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
