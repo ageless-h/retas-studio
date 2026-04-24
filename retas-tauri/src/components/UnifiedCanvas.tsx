@@ -547,8 +547,24 @@ export default function UnifiedCanvas({
               const fullPixels = new Uint8Array(pixels);
               const sparsePixels: { x: number; y: number; r: number; g: number; b: number; a: number }[] = [];
               
-              for (let y = 0; y < DOC_HEIGHT; y++) {
-                for (let x = 0; x < DOC_WIDTH; x++) {
+              // Compute stroke bounding box from tracked points + brush radius padding
+              // to avoid scanning the entire frame (#19 performance fix)
+              const pts = pointsRef.current;
+              let minX = DOC_WIDTH, minY = DOC_HEIGHT, maxX = 0, maxY = 0;
+              for (const [px, py] of pts) {
+                if (px < minX) minX = px;
+                if (py < minY) minY = py;
+                if (px > maxX) maxX = px;
+                if (py > maxY) maxY = py;
+              }
+              const pad = Math.ceil(brushSize) + 2;
+              const scanX0 = Math.max(0, Math.floor(minX) - pad);
+              const scanY0 = Math.max(0, Math.floor(minY) - pad);
+              const scanX1 = Math.min(DOC_WIDTH, Math.ceil(maxX) + pad);
+              const scanY1 = Math.min(DOC_HEIGHT, Math.ceil(maxY) + pad);
+              
+              for (let y = scanY0; y < scanY1; y++) {
+                for (let x = scanX0; x < scanX1; x++) {
                   const idx = (y * DOC_WIDTH + x) * 4;
                   const alpha = fullPixels[idx + 3];
                   if (alpha > 0) {
