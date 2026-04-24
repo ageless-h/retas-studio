@@ -49,3 +49,11 @@ playwright-report/
 tmp/
 temp/
 *.tmp
+
+# AI tool state files
+.ralph-state.md
+ralgh.md
+
+# OS extras
+Desktop.ini
+ehthumbs.db
