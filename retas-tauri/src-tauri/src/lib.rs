@@ -19,6 +19,7 @@ pub struct LayerInfo {
     pub locked: bool,
     pub opacity: f64,
     pub layer_type: String,
+    pub blend_mode: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -125,6 +126,7 @@ fn get_layers(state: State<Arc<AppState>>) -> Result<Vec<LayerInfo>, String> {
                 locked: base.locked,
                 opacity: base.opacity,
                 layer_type: format!("{:?}", base.layer_type),
+                blend_mode: format!("{:?}", base.blend_mode).to_lowercase(),
             });
         }
     }
@@ -155,6 +157,7 @@ fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, Str
         locked: base.locked,
         opacity: base.opacity,
         layer_type: format!("{:?}", base.layer_type),
+        blend_mode: format!("{:?}", base.blend_mode).to_lowercase(),
     })
 }
 
@@ -1087,6 +1090,39 @@ fn move_layer(id: String, new_index: usize, state: State<Arc<AppState>>) -> Resu
 }
 
 #[tauri::command]
+fn set_layer_blend_mode(id: String, blend_mode: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "设置混合模式");
+    
+    let mode = match blend_mode.as_str() {
+        "normal" => retas_core::BlendMode::Normal,
+        "multiply" => retas_core::BlendMode::Multiply,
+        "screen" => retas_core::BlendMode::Screen,
+        "overlay" => retas_core::BlendMode::Overlay,
+        "darken" => retas_core::BlendMode::Darken,
+        "lighten" => retas_core::BlendMode::Lighten,
+        "color_dodge" => retas_core::BlendMode::ColorDodge,
+        "color_burn" => retas_core::BlendMode::ColorBurn,
+        "hard_light" => retas_core::BlendMode::HardLight,
+        "soft_light" => retas_core::BlendMode::SoftLight,
+        "difference" => retas_core::BlendMode::Difference,
+        "exclusion" => retas_core::BlendMode::Exclusion,
+        "hue" => retas_core::BlendMode::Hue,
+        "saturation" => retas_core::BlendMode::Saturation,
+        "color" => retas_core::BlendMode::Color,
+        "luminosity" => retas_core::BlendMode::Luminosity,
+        other => return Err(format!("Unknown blend mode: {}", other)),
+    };
+    
+    let layer = editor.document.layers.get_mut(&layer_id)
+        .ok_or("Layer not found")?;
+    layer.base_mut().blend_mode = mode;
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
 fn export_image(
     output_path: String,
     format: String,
@@ -1187,6 +1223,7 @@ pub fn run() {
             rename_layer,
             set_layer_opacity,
             move_layer,
+            set_layer_blend_mode,
             export_image,
             export_frame_sequence,
         ])

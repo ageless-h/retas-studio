@@ -15,7 +15,7 @@ import { useWorkspace } from "./hooks/useWorkspace";
 import {
   openDocument, saveDocument, undo, redo, canUndo, canRedo,
   getLayers, getXSheetData, toggleKeyframe, insertFrames, deleteFrames,
-  getFrameInfo, LayerInfo,
+  getFrameInfo, setLayerBlendMode, LayerInfo,
 } from "./api";
 import { showOpenDialog, showSaveDialog } from "./utils/fileDialog";
 import MemoryMonitor from "./components/MemoryMonitor";
@@ -168,11 +168,83 @@ function AnimationPropsPanel(props: IDockviewPanelProps<{
   );
 }
 
+const BLEND_MODES = [
+  { value: "normal", label: "正常" },
+  { value: "multiply", label: "正片叠底" },
+  { value: "screen", label: "滤色" },
+  { value: "overlay", label: "叠加" },
+  { value: "darken", label: "变暗" },
+  { value: "lighten", label: "变亮" },
+  { value: "color_dodge", label: "颜色减淡" },
+  { value: "color_burn", label: "颜色加深" },
+  { value: "hard_light", label: "强光" },
+  { value: "soft_light", label: "柔光" },
+  { value: "difference", label: "差值" },
+  { value: "exclusion", label: "排除" },
+  { value: "hue", label: "色相" },
+  { value: "saturation", label: "饱和度" },
+  { value: "color", label: "颜色" },
+  { value: "luminosity", label: "明度" },
+];
+
 function BlendModesPanel() {
+  const [layers, setLayers] = useState<LayerInfo[]>([]);
+  const [activeLayerId, setActiveLayerId] = useState<string | null>(null);
+
+  const loadLayers = useCallback(async () => {
+    try {
+      const data = await getLayers();
+      setLayers(data);
+      if (!activeLayerId && data.length > 0) setActiveLayerId(data[0].id);
+    } catch {}
+  }, [activeLayerId]);
+
+  useEffect(() => { loadLayers(); }, [loadLayers]);
+  useEffect(() => {
+    const handler = () => loadLayers();
+    window.addEventListener("retas:state-changed", handler);
+    return () => window.removeEventListener("retas:state-changed", handler);
+  }, [loadLayers]);
+
+  const activeLayer = layers.find(l => l.id === activeLayerId);
+  const currentMode = activeLayer?.blendMode || "normal";
+
+  const handleChange = async (mode: string) => {
+    if (!activeLayerId) return;
+    try {
+      await setLayerBlendMode(activeLayerId, mode);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("设置混合模式失败:", e);
+    }
+  };
+
   return (
     <div style={{ padding: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: "#8b949e", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>混合模式</div>
-      <div style={{ fontSize: 12, color: "#8b949e" }}>正常 / 正片叠底 / 滤色 / 叠加</div>
+      {activeLayer && (
+        <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+          图层: <span style={{ color: "#e6edf3" }}>{activeLayer.name}</span>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {BLEND_MODES.map(mode => (
+          <div
+            key={mode.value}
+            onClick={() => handleChange(mode.value)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 3,
+              fontSize: 12,
+              cursor: "pointer",
+              background: currentMode === mode.value ? "#094771" : "transparent",
+              color: currentMode === mode.value ? "#58a6ff" : "#8b949e",
+            }}
+          >
+            {mode.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

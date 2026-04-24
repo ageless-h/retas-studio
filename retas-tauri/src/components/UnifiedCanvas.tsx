@@ -56,8 +56,9 @@ export default function UnifiedCanvas({
   const strokePaintRef = useRef<any>(null);
 
   const isDrawingRef = useRef(false);
-  const pointsRef = useRef<[number, number][]>([]);
+  const pointsRef = useRef<[number, number, number][]>([]); // [x, y, pressure]
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  const maxPressureRef = useRef(1.0);
   const needsRefreshRef = useRef(true);
   const isRefreshingRef = useRef(false);
 
@@ -317,15 +318,18 @@ export default function UnifiedCanvas({
     }
   }, [canvasKit, renderBackground]);
 
-  const getCanvasPos = useCallback((e: React.MouseEvent) => {
+  const getCanvasPos = useCallback((e: React.PointerEvent | React.MouseEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: 0, y: 0, pressure: 0.5 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = DOC_WIDTH / rect.width;
     const scaleY = DOC_HEIGHT / rect.height;
+    // PointerEvent has pressure (0.0–1.0); MouseEvent doesn't → default 0.5
+    const pressure = "pressure" in e ? (e as React.PointerEvent).pressure || 0.5 : 0.5;
     return {
       x: (e.clientX - rect.left) * scaleX,
       y: (e.clientY - rect.top) * scaleY,
+      pressure,
     };
   }, []);
 
@@ -381,7 +385,7 @@ export default function UnifiedCanvas({
   }, [canvasKit, selectionTool, currentSelectionRect]);
 
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent) => {
       if (!surfaceRef.current || !paintRef.current) return;
       
       if (tool === "select") {
@@ -417,7 +421,8 @@ export default function UnifiedCanvas({
         isDrawingRef.current = true;
         const pos = getCanvasPos(e);
         lastPosRef.current = pos;
-        pointsRef.current = [[pos.x, pos.y]];
+        pointsRef.current = [[pos.x, pos.y, pos.pressure]];
+        maxPressureRef.current = pos.pressure;
         
         if (strokeSurfaceRef.current && canvasKit) {
           const strokeCtx = strokeSurfaceRef.current.getCanvas();
@@ -433,7 +438,7 @@ export default function UnifiedCanvas({
   );
 
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent) => {
       if (!surfaceRef.current || !canvasKit) return;
       
       if (tool === "select" && isSelectingRef.current && selectionStartRef.current) {
@@ -459,10 +464,14 @@ export default function UnifiedCanvas({
       const pos = getCanvasPos(e);
       
       const lastPos = lastPosRef.current;
-      pointsRef.current.push([pos.x, pos.y]);
+      pointsRef.current.push([pos.x, pos.y, pos.pressure]);
+      if (pos.pressure > maxPressureRef.current) maxPressureRef.current = pos.pressure;
 
       if (strokeSurfaceRef.current && strokePaintRef.current) {
         const strokeCtx = strokeSurfaceRef.current.getCanvas();
+        // Modulate stroke width by pressure (0.3–1.0 range to avoid invisible strokes)
+        const pressureScale = 0.3 + 0.7 * pos.pressure;
+        strokePaintRef.current.setStrokeWidth(brushSize * pressureScale);
         strokeCtx.drawLine(lastPos.x, lastPos.y, pos.x, pos.y, strokePaintRef.current);
         strokeSurfaceRef.current.flush();
       }
@@ -573,7 +582,7 @@ export default function UnifiedCanvas({
                 if (px > maxX) maxX = px;
                 if (py > maxY) maxY = py;
               }
-              const pad = Math.ceil(brushSize) + 2;
+              const pad = Math.ceil(brushSize * maxPressureRef.current) + 2;
               const scanX0 = Math.max(0, Math.floor(minX) - pad);
               const scanY0 = Math.max(0, Math.floor(minY) - pad);
               const scanX1 = Math.min(DOC_WIDTH, Math.ceil(maxX) + pad);
@@ -647,11 +656,12 @@ export default function UnifiedCanvas({
           width: DOC_WIDTH,
           height: DOC_HEIGHT,
           cursor: getCursor(),
+          touchAction: "none", // Required for pressure-sensitive stylus input
         }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onPointerDown={handleMouseDown}
+        onPointerMove={handleMouseMove}
+        onPointerUp={handleMouseUp}
+        onPointerLeave={handleMouseUp}
       />
       {import.meta.env.MODE === "development" && (
         <div

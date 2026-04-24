@@ -44,6 +44,7 @@ export interface LayerInfo {
   visible: boolean;
   locked: boolean;
   opacity: number;
+  blendMode?: string;
 }
 
 export interface FrameInfo {
@@ -131,6 +132,11 @@ export async function setLayerOpacity(id: string, opacity: number): Promise<void
 export async function moveLayer(id: string, newIndex: number): Promise<void> {
   if (!isTauri) return Promise.resolve();
   return safeInvoke("move_layer", { id, newIndex });
+}
+
+export async function setLayerBlendMode(id: string, blendMode: string): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("set_layer_blend_mode", { id, blendMode });
 }
 
 export async function getFrameInfo(): Promise<FrameInfo> {
