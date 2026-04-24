@@ -544,7 +544,27 @@ export default function UnifiedCanvas({
             });
             
             if (pixels) {
-              await applyStrokePixels(new Uint8Array(pixels));
+              const fullPixels = new Uint8Array(pixels);
+              const sparsePixels: { x: number; y: number; r: number; g: number; b: number; a: number }[] = [];
+              
+              for (let y = 0; y < DOC_HEIGHT; y++) {
+                for (let x = 0; x < DOC_WIDTH; x++) {
+                  const idx = (y * DOC_WIDTH + x) * 4;
+                  const alpha = fullPixels[idx + 3];
+                  if (alpha > 0) {
+                    sparsePixels.push({
+                      x,
+                      y,
+                      r: fullPixels[idx],
+                      g: fullPixels[idx + 1],
+                      b: fullPixels[idx + 2],
+                      a: alpha,
+                    });
+                  }
+                }
+              }
+              
+              await applyStrokePixels(sparsePixels);
             }
             strokeImage.delete();
           }

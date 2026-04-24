@@ -72,11 +72,20 @@ export async function drawStroke(command: DrawCommand): Promise<string> {
   return safeInvoke("draw_stroke", { command });
 }
 
-export async function applyStrokePixels(strokePixels: Uint8Array): Promise<string> {
+export interface SparsePixel {
+  x: number;
+  y: number;
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+export async function applyStrokePixels(strokePixels: SparsePixel[]): Promise<string> {
   if (!isTauri) {
     return Promise.resolve("Mock: stroke pixels applied");
   }
-  return safeInvoke("apply_stroke_pixels", { strokePixels: Array.from(strokePixels) });
+  return safeInvoke("apply_stroke_pixels_sparse", { strokePixels });
 }
 
 export async function getLayers(): Promise<LayerInfo[]> {

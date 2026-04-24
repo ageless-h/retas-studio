@@ -394,6 +394,79 @@ fn apply_stroke_pixels(
     Ok("笔划已应用".to_string())
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct SparsePixel {
+    x: u32,
+    y: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+#[tauri::command]
+fn apply_stroke_pixels_sparse(
+    stroke_pixels: Vec<SparsePixel>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+
+    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = doc.timeline.current_frame;
+
+    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support drawing".to_string()),
+    };
+
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let width = frame.width as usize;
+    let frame_data = frame.get_image_data_mut();
+
+    for pixel in &stroke_pixels {
+        let x = pixel.x as usize;
+        let y = pixel.y as usize;
+        
+        if x >= width {
+            continue;
+        }
+        
+        let idx = (y * width + x) * 4;
+        if idx + 3 >= frame_data.len() {
+            continue;
+        }
+        
+        let src_alpha = pixel.a;
+        if src_alpha == 0 {
+            continue;
+        }
+        
+        let dst_alpha = frame_data[idx + 3];
+        
+        if dst_alpha == 0 {
+            frame_data[idx] = pixel.r;
+            frame_data[idx + 1] = pixel.g;
+            frame_data[idx + 2] = pixel.b;
+            frame_data[idx + 3] = src_alpha;
+        } else {
+            let src_a = src_alpha as f64 / 255.0;
+            let dst_a = dst_alpha as f64 / 255.0;
+            let out_a = src_a + dst_a * (1.0 - src_a);
+            
+            if out_a > 0.0 {
+                frame_data[idx] = ((pixel.r as f64 * src_a + frame_data[idx] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 1] = ((pixel.g as f64 * src_a + frame_data[idx + 1] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 2] = ((pixel.b as f64 * src_a + frame_data[idx + 2] as f64 * dst_a * (1.0 - src_a)) / out_a) as u8;
+                frame_data[idx + 3] = (out_a * 255.0) as u8;
+            }
+        }
+    }
+
+    Ok(format!("应用了 {} 个像素", stroke_pixels.len()))
+}
+
 #[tauri::command]
 fn get_layer_pixels(layer_id: String, state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
     let doc = state.document.lock().map_err(|e| e.to_string())?;
@@ -883,6 +956,7 @@ pub fn run() {
             get_document_info,
             draw_stroke,
             apply_stroke_pixels,
+            apply_stroke_pixels_sparse,
             get_layer_pixels,
             composite_layers,
             get_layers,
