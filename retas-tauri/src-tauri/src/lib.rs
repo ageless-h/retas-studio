@@ -6,6 +6,7 @@ mod state;
 use state::AppState;
 
 use retas_core::Layer as RetasLayer;
+use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerInfo {
@@ -41,6 +42,34 @@ pub struct DocumentInfo {
     pub height: f64,
     pub frame_rate: f64,
     pub total_frames: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct XSheetCell {
+    pub layer_id: String,
+    pub frame: u32,
+    pub has_keyframe: bool,
+    pub is_empty: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SelectionDataFrontend {
+    #[serde(rename = "type")]
+    pub selection_type: String,
+    pub mode: String,
+    pub points: Vec<(f64, f64)>,
+    pub rect: Option<(f64, f64, f64, f64)>,
+    pub feather: f64,
+    pub tolerance: f64,
+    pub contiguous: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SelectionBoundsFrontend {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 fn parse_layer_id(s: &str) -> Result<retas_core::LayerId, String> {
@@ -196,6 +225,12 @@ fn delete_frame(state: State<Arc<AppState>>) -> Result<(), String> {
     record_history(&state)?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     if doc.timeline.end_frame > 1 {
+        let removed_frame = doc.timeline.end_frame - 1;
+        for layer in doc.layers.values_mut() {
+            if let retas_core::Layer::Raster(raster) = layer {
+                raster.frames.remove(&removed_frame);
+            }
+        }
         doc.timeline.end_frame -= 1;
         doc.settings.total_frames -= 1;
     }
@@ -318,6 +353,10 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
 
     let current_frame = doc.timeline.current_frame;
 
+    let mut layer_data: Vec<&[u8]> = Vec::new();
+    let mut blend_modes: Vec<retas_core::BlendMode> = Vec::new();
+    let mut opacities: Vec<f64> = Vec::new();
+
     for layer_id in &doc.timeline.layer_order {
         let layer = match doc.layers.get(layer_id) {
             Some(l) => l,
@@ -338,18 +377,14 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
             None => continue,
         };
 
-        let blend_mode = layer.base().blend_mode;
-        let opacity = layer.base().opacity;
+        layer_data.push(&frame.image_data);
+        blend_modes.push(layer.base().blend_mode);
+        opacities.push(layer.base().opacity);
+    }
 
-        for i in (0..pixel_count).step_by(4) {
-            let base = retas_core::Color8::new(result[i], result[i + 1], result[i + 2], result[i + 3]);
-            let blend = retas_core::Color8::new(frame.image_data[i], frame.image_data[i + 1], frame.image_data[i + 2], frame.image_data[i + 3]);
-            let out = retas_core::composite::blend_pixels(base, blend, blend_mode, opacity);
-            result[i] = out.r;
-            result[i + 1] = out.g;
-            result[i + 2] = out.b;
-            result[i + 3] = out.a;
-        }
+    if !layer_data.is_empty() {
+        let blended = retas_core::composite::composite_layers(&layer_data, &blend_modes, &opacities, width, height);
+        result = blended;
     }
 
     Ok(result)
@@ -357,9 +392,13 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 fn undo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let current = state.document.lock().map_err(|e| e.to_string())?.clone();
-    let prev = state.history.lock().map_err(|e| e.to_string())?.undo(&current);
-    if let Some(doc) = prev {
+    let snapshot = {
+        let doc = state.document.lock().map_err(|e| e.to_string())?;
+        let current = doc.clone();
+        let mut history = state.history.lock().map_err(|e| e.to_string())?;
+        history.undo(&current)
+    };
+    if let Some(doc) = snapshot {
         *state.document.lock().map_err(|e| e.to_string())? = doc;
         Ok(true)
     } else {
@@ -369,9 +408,13 @@ fn undo(state: State<Arc<AppState>>) -> Result<bool, String> {
 
 #[tauri::command]
 fn redo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let current = state.document.lock().map_err(|e| e.to_string())?.clone();
-    let next = state.history.lock().map_err(|e| e.to_string())?.redo(&current);
-    if let Some(doc) = next {
+    let snapshot = {
+        let doc = state.document.lock().map_err(|e| e.to_string())?;
+        let current = doc.clone();
+        let mut history = state.history.lock().map_err(|e| e.to_string())?;
+        history.redo(&current)
+    };
+    if let Some(doc) = snapshot {
         *state.document.lock().map_err(|e| e.to_string())? = doc;
         Ok(true)
     } else {
@@ -422,6 +465,224 @@ fn save_document(path: String, state: State<Arc<AppState>>) -> Result<(), String
     Ok(())
 }
 
+#[tauri::command]
+fn get_xsheet_data(state: State<Arc<AppState>>) -> Result<Vec<XSheetCell>, String> {
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut cells = Vec::new();
+
+    for frame in 0..doc.timeline.end_frame {
+        for layer_id in &doc.timeline.layer_order {
+            if let Some(layer) = doc.layers.get(layer_id) {
+                let has_keyframe = layer.has_keyframe(frame);
+                let is_empty = match layer {
+                    retas_core::Layer::Raster(r) => !r.frames.contains_key(&frame),
+                    retas_core::Layer::Vector(v) => !v.frames.contains_key(&frame),
+                    _ => true,
+                };
+
+                cells.push(XSheetCell {
+                    layer_id: layer_id.0.to_string(),
+                    frame,
+                    has_keyframe,
+                    is_empty,
+                });
+            }
+        }
+    }
+
+    Ok(cells)
+}
+
+#[tauri::command]
+fn toggle_keyframe(layer_id: String, frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&layer_id)?;
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let layer = doc.layers.get_mut(&layer_id)
+        .ok_or_else(|| "Layer not found".to_string())?;
+    
+    layer.toggle_keyframe(frame);
+    Ok(())
+}
+
+#[tauri::command]
+fn insert_frames(at_frame: u32, count: u32, state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    doc.insert_frames(at_frame, count);
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_frames(at_frame: u32, count: u32, state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    doc.delete_frames(at_frame, count);
+    Ok(())
+}
+
+#[tauri::command]
+fn copy_frame(layer_id: String, from_frame: u32, to_frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
+    let layer_id = parse_layer_id(&layer_id)?;
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    doc.copy_frame(layer_id, from_frame, to_frame)
+}
+
+#[tauri::command]
+fn create_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let tool = match selection.selection_type.as_str() {
+        "rect" => SelectionTool::Rectangular,
+        "ellipse" => SelectionTool::Elliptical,
+        "lasso" => SelectionTool::Lasso,
+        "magicWand" => SelectionTool::MagicWand,
+        _ => SelectionTool::Rectangular,
+    };
+    
+    let mode = match selection.mode.as_str() {
+        "replace" => RetasSelectionMode::Replace,
+        "add" => RetasSelectionMode::Add,
+        "subtract" => RetasSelectionMode::Subtract,
+        "intersect" => RetasSelectionMode::Intersect,
+        _ => RetasSelectionMode::Replace,
+    };
+    
+    let mask = if selection.selection_type == "lasso" {
+        let points: Vec<retas_core::Point> = selection.points.iter()
+            .map(|(x, y)| retas_core::Point::new(*x, *y))
+            .collect();
+        let bounds = calculate_points_bounds(&points);
+        SelectionMask::Lasso { points, bounds }
+    } else if let Some((x, y, w, h)) = selection.rect {
+        let rect = retas_core::Rect::new(x, y, w, h);
+        if selection.selection_type == "ellipse" {
+            SelectionMask::Elliptical { rect }
+        } else {
+            SelectionMask::Rectangular { rect }
+        }
+    } else {
+        SelectionMask::None
+    };
+    
+    let new_selection = Selection {
+        tool,
+        mode,
+        mask,
+        feather: selection.feather,
+        anti_aliased: true,
+        is_active: true,
+    };
+    
+    doc.selection = Some(new_selection);
+    Ok(())
+}
+
+fn calculate_points_bounds(points: &[retas_core::Point]) -> retas_core::Rect {
+    if points.is_empty() {
+        return retas_core::Rect::ZERO;
+    }
+    
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+    
+    for p in points {
+        min_x = min_x.min(p.x);
+        min_y = min_y.min(p.y);
+        max_x = max_x.max(p.x);
+        max_y = max_y.max(p.y);
+    }
+    
+    retas_core::Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+}
+
+#[tauri::command]
+fn clear_selection(state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    doc.selection = None;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_selection(state: State<Arc<AppState>>) -> Result<Option<SelectionDataFrontend>, String> {
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let sel = match &doc.selection {
+        Some(s) if s.is_active => s,
+        _ => return Ok(None),
+    };
+    
+    let (selection_type, rect, points) = match &sel.mask {
+        SelectionMask::None => return Ok(None),
+        SelectionMask::Rectangular { rect } => ("rect".to_string(), Some((rect.origin.x, rect.origin.y, rect.size.width, rect.size.height)), vec![]),
+        SelectionMask::Elliptical { rect } => ("ellipse".to_string(), Some((rect.origin.x, rect.origin.y, rect.size.width, rect.size.height)), vec![]),
+        SelectionMask::Lasso { points: pts, .. } => {
+            let pts: Vec<(f64, f64)> = pts.iter().map(|p| (p.x, p.y)).collect();
+            ("lasso".to_string(), None, pts)
+        },
+        SelectionMask::MagicWand { start_point, .. } => {
+            ("magicWand".to_string(), Some((start_point.x, start_point.y, 0.0, 0.0)), vec![])
+        },
+        SelectionMask::Bitmap { width, height, .. } => {
+            ("rect".to_string(), Some((0.0, 0.0, *width as f64, *height as f64)), vec![])
+        },
+    };
+    
+    let mode = match sel.mode {
+        RetasSelectionMode::Replace => "replace",
+        RetasSelectionMode::Add => "add",
+        RetasSelectionMode::Subtract => "subtract",
+        RetasSelectionMode::Intersect => "intersect",
+    };
+    
+    Ok(Some(SelectionDataFrontend {
+        selection_type,
+        mode: mode.to_string(),
+        points,
+        rect,
+        feather: sel.feather,
+        tolerance: 32.0,
+        contiguous: true,
+    }))
+}
+
+#[tauri::command]
+fn get_selection_bounds(state: State<Arc<AppState>>) -> Result<Option<SelectionBoundsFrontend>, String> {
+    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    let sel = match &doc.selection {
+        Some(s) if s.is_active => s,
+        _ => return Ok(None),
+    };
+    
+    let bounds = sel.bounds();
+    Ok(bounds.map(|b| SelectionBoundsFrontend {
+        x: b.origin.x,
+        y: b.origin.y,
+        width: b.size.width,
+        height: b.size.height,
+    }))
+}
+
+#[tauri::command]
+fn invert_selection(state: State<Arc<AppState>>) -> Result<(), String> {
+    record_history(&state)?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(sel) = &doc.selection {
+        let width = doc.settings.resolution.width as u32;
+        let height = doc.settings.resolution.height as u32;
+        doc.selection = Some(sel.invert(width, height));
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -449,6 +710,16 @@ pub fn run() {
             can_redo,
             open_document,
             save_document,
+            get_xsheet_data,
+            toggle_keyframe,
+            insert_frames,
+            delete_frames,
+            copy_frame,
+            create_selection,
+            clear_selection,
+            get_selection,
+            get_selection_bounds,
+            invert_selection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

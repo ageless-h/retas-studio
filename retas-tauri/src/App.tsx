@@ -23,6 +23,8 @@ import ColorPanel from "./components/ColorPanel";
 import Timeline from "./components/Timeline";
 import PlaybackController from "./components/PlaybackController";
 import UnifiedCanvas from "./components/UnifiedCanvas";
+import { OnionSkinPanel, OnionSkinSettings } from "./components/OnionSkinPanel";
+import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand";
 
@@ -48,13 +50,44 @@ const workspaceLabels: Record<string, string> = {
   compositing: "合成",
 };
 
-function CanvasPanel(props: IDockviewPanelProps<{ tool?: string; zoom?: number; color?: string; brushSize?: number }>) {
+function CanvasPanel(props: IDockviewPanelProps<{ 
+  tool?: string; 
+  zoom?: number; 
+  color?: string; 
+  brushSize?: number;
+  onionSkin?: OnionSkinSettings;
+  currentFrame?: number;
+  totalFrames?: number;
+  selection?: SelectionData | null;
+  selectionTool?: "rect" | "ellipse" | "lasso" | "magicWand";
+  selectionMode?: "replace" | "add" | "subtract" | "intersect";
+  onSelectionChange?: (selection: SelectionData | null) => void;
+}>) {
   const tool = props.params.tool || "brush";
   const zoom = props.params.zoom || 100;
   const color = props.params.color || "#000000";
   const brushSize = props.params.brushSize || 2;
+  const onionSkin = props.params.onionSkin;
+  const currentFrame = props.params.currentFrame || 1;
+  const totalFrames = props.params.totalFrames || 100;
+  const selection = props.params.selection;
+  const selectionTool = props.params.selectionTool || "rect";
+  const selectionMode = props.params.selectionMode || "replace";
+  const onSelectionChange = props.params.onSelectionChange;
 
-  return <UnifiedCanvas tool={tool} zoom={zoom} color={color} brushSize={brushSize} />;
+  return <UnifiedCanvas 
+    tool={tool} 
+    zoom={zoom} 
+    color={color} 
+    brushSize={brushSize} 
+    onionSkin={onionSkin}
+    currentFrame={currentFrame}
+    totalFrames={totalFrames}
+    selection={selection}
+    selectionTool={selectionTool}
+    selectionMode={selectionMode}
+    onSelectionChange={onSelectionChange}
+  />;
 }
 
 function TimelinePanel(props: IDockviewPanelProps<{ isPlaying?: boolean; onPlayToggle?: () => void; currentFrame?: number; totalFrames?: number; fps?: number; onFrameChange?: (frame: number) => void }>) {
@@ -122,7 +155,15 @@ const components = {
 };
 
 function App() {
-  useKeyboardShortcuts();
+  const handleToolChange = useCallback((tool: string) => {
+    setCurrentTool(tool as Tool);
+  }, []);
+
+  const handleBrushSizeChange = useCallback((delta: number) => {
+    setBrushSize(prev => Math.max(1, Math.min(100, prev + delta * 2)));
+  }, []);
+
+  useKeyboardShortcuts(handleToolChange, handleBrushSizeChange);
   const { memoryInfo } = useCanvasKit();
   const { currentWorkspace } = useWorkspace();
   const apiRef = useRef<any>(null);
@@ -138,6 +179,19 @@ function App() {
   const [visibleToolIds, setVisibleToolIds] = useState<Set<Tool>>(new Set(allTools.map(t => t.id)));
   const [undoAvailable, setUndoAvailable] = useState(false);
   const [redoAvailable, setRedoAvailable] = useState(false);
+  const [onionSkinSettings, setOnionSkinSettings] = useState<OnionSkinSettings>({
+    enabled: false,
+    framesBefore: 1,
+    framesAfter: 1,
+    opacityBefore: 0.3,
+    opacityAfter: 0.3,
+    colorBefore: "#ff0000",
+    colorAfter: "#00ff00",
+    blendMode: "tint",
+  });
+  const [selectionData, setSelectionData] = useState<SelectionData | null>(null);
+  const [selectionTool, setSelectionTool] = useState<"rect" | "ellipse" | "lasso" | "magicWand">("rect");
+  const [selectionMode, setSelectionMode] = useState<"replace" | "add" | "subtract" | "intersect">("replace");
 
   const visibleTools = allTools.filter(t => visibleToolIds.has(t.id));
 
@@ -194,7 +248,19 @@ function App() {
       id: "canvas",
       component: "canvas",
       title: "画布",
-      params: { tool: currentTool, zoom, color: brushColor, brushSize },
+      params: { 
+        tool: currentTool, 
+        zoom, 
+        color: brushColor, 
+        brushSize, 
+        onionSkin: onionSkinSettings, 
+        currentFrame, 
+        totalFrames,
+        selection: selectionData,
+        selectionTool,
+        selectionMode,
+        onSelectionChange: setSelectionData,
+      },
     });
 
     api.addPanel({
@@ -261,16 +327,28 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
       });
     }
-  }, []);
+  }, [currentTool, zoom, brushColor, brushSize, currentWorkspace, isPlaying, currentFrame, totalFrames, fps, onionSkinSettings, selectionData, selectionTool, selectionMode]);
 
   const updateCanvas = useCallback(() => {
     if (apiRef.current) {
       const panel = apiRef.current.getPanel("canvas");
       if (panel) {
-        panel.api.updateParameters({ tool: currentTool, zoom, color: brushColor, brushSize });
+        panel.api.updateParameters({ 
+          tool: currentTool, 
+          zoom, 
+          color: brushColor, 
+          brushSize,
+          onionSkin: onionSkinSettings,
+          currentFrame,
+          totalFrames,
+          selection: selectionData,
+          selectionTool,
+          selectionMode,
+          onSelectionChange: setSelectionData,
+        });
       }
     }
-  }, [currentTool, zoom, brushColor, brushSize]);
+  }, [currentTool, zoom, brushColor, brushSize, onionSkinSettings, currentFrame, totalFrames, selectionData, selectionTool, selectionMode]);
 
   const updateColorPanel = useCallback(() => {
     if (apiRef.current) {
@@ -329,7 +407,7 @@ function App() {
         position: { referencePanel: "canvas", direction: "right" },
       });
     }
-  }, [currentWorkspace]);
+  }, [currentWorkspace, brushColor, brushSize]);
 
   const handleUndo = async () => {
     try {
@@ -440,6 +518,33 @@ function App() {
         </ButtonGroup>
 
         <div style={{ flex: 1 }} />
+
+        {currentTool === "select" && (
+          <Popover
+            content={
+              <div style={{ padding: 8, minWidth: 200 }}>
+                <SelectionToolPanel
+                  selection={selectionData}
+                  onSelectionChange={setSelectionData}
+                  onToolChange={setSelectionTool}
+                  onModeChange={setSelectionMode}
+                  initialTool={selectionTool}
+                  initialMode={selectionMode}
+                />
+              </div>
+            }
+            position="bottom"
+          >
+            <Button small minimal>
+              选区工具
+            </Button>
+          </Popover>
+        )}
+
+        <OnionSkinPanel 
+          settings={onionSkinSettings} 
+          onSettingsChange={setOnionSkinSettings} 
+        />
 
         <ButtonGroup minimal>
           <Button small icon={<ZoomOut size={12} />} onClick={() => setZoom(z => Math.max(10, z - 10))} />

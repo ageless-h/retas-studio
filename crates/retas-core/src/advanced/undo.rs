@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::any::Any;
-use crate::{Document, LayerId, Layer, Color8, Point, Rect};
+use crate::{Document, LayerId, Layer, Color8};
+use super::selection::Selection;
 
 pub trait Command: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
@@ -436,8 +437,8 @@ impl Command for LayerPropertyCommand {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionCommand {
-    pub old_selection: Option<SelectionData>,
-    pub new_selection: Option<SelectionData>,
+    pub old_selection: Option<Selection>,
+    pub new_selection: Option<Selection>,
     pub description: String,
 }
 
@@ -462,7 +463,7 @@ impl Command for SelectionCommand {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FillCommand {
     pub layer_id: LayerId,
-    pub selection: Option<SelectionData>,
+    pub selection: Option<Selection>,
     pub old_pixel_data: Vec<u8>,
     pub fill_color: Color8,
     pub tolerance: f64,
@@ -556,23 +557,4 @@ impl Command for FrameCommand {
     fn description(&self) -> &str {
         &self.description
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SelectionData {
-    pub selection_type: SelectionType,
-    pub points: Vec<Point>,
-    pub bounds: Rect,
-    pub feather: f64,
-    pub anti_aliased: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum SelectionType {
-    None,
-    Rectangular,
-    Elliptical,
-    Lasso,
-    Polygon,
-    MagicWand,
 }

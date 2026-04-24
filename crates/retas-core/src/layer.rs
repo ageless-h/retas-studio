@@ -68,6 +68,7 @@ pub struct LayerBase {
     pub layer_type: LayerType,
     pub parent: Option<LayerId>,
     pub children: Vec<LayerId>,
+    pub keyframes: std::collections::HashSet<u32>,
 }
 
 impl LayerBase {
@@ -82,6 +83,7 @@ impl LayerBase {
             layer_type,
             parent: None,
             children: Vec::new(),
+            keyframes: std::collections::HashSet::new(),
         }
     }
 }
@@ -261,5 +263,47 @@ impl Layer {
 
     pub fn layer_type(&self) -> LayerType {
         self.base().layer_type
+    }
+
+    pub fn has_keyframe(&self, frame: u32) -> bool {
+        self.base().keyframes.contains(&frame)
+    }
+
+    pub fn toggle_keyframe(&mut self, frame: u32) {
+        if self.base().keyframes.contains(&frame) {
+            self.base_mut().keyframes.remove(&frame);
+        } else {
+            self.base_mut().keyframes.insert(frame);
+        }
+    }
+
+    pub fn get_keyframes(&self) -> &std::collections::HashSet<u32> {
+        &self.base().keyframes
+    }
+
+    pub fn insert_frame_at(&mut self, frame: u32) {
+        let keyframes = self.base_mut().keyframes.clone();
+        let mut shifted = std::collections::HashSet::new();
+        for kf in keyframes.iter() {
+            if *kf >= frame {
+                shifted.insert(*kf + 1);
+            } else {
+                shifted.insert(*kf);
+            }
+        }
+        self.base_mut().keyframes = shifted;
+    }
+
+    pub fn delete_frame_at(&mut self, frame: u32) {
+        let keyframes = self.base_mut().keyframes.clone();
+        let mut shifted = std::collections::HashSet::new();
+        for kf in keyframes.iter() {
+            if *kf > frame {
+                shifted.insert(*kf - 1);
+            } else if *kf < frame {
+                shifted.insert(*kf);
+            }
+        }
+        self.base_mut().keyframes = shifted;
     }
 }

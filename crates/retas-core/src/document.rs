@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::{Layer, LayerId, Rect, Size};
+use crate::advanced::selection::Selection;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Timeline {
@@ -71,7 +72,7 @@ pub struct Document {
     pub timeline: Timeline,
     pub selected_layers: Vec<LayerId>,
     pub modified: bool,
-    pub selection: Option<crate::advanced::undo::SelectionData>,
+    pub selection: Option<Selection>,
 }
 
 impl Document {
@@ -126,6 +127,63 @@ impl Document {
             self.settings.resolution.width,
             self.settings.resolution.height,
         )
+    }
+
+    pub fn insert_frames(&mut self, at_frame: u32, count: u32) {
+        for layer in self.layers.values_mut() {
+            for _ in 0..count {
+                layer.insert_frame_at(at_frame);
+            }
+        }
+        self.timeline.end_frame += count;
+        self.settings.total_frames += count;
+        self.modified = true;
+    }
+
+    pub fn delete_frames(&mut self, at_frame: u32, count: u32) {
+        let count = count.min(self.timeline.end_frame.saturating_sub(at_frame));
+        for layer in self.layers.values_mut() {
+            for _ in 0..count {
+                layer.delete_frame_at(at_frame);
+            }
+        }
+        self.timeline.end_frame = self.timeline.end_frame.saturating_sub(count);
+        self.settings.total_frames = self.settings.total_frames.saturating_sub(count);
+        self.modified = true;
+    }
+
+    pub fn copy_frame(&mut self, layer_id: LayerId, from_frame: u32, to_frame: u32) -> Result<(), String> {
+        let layer = self.layers.get_mut(&layer_id)
+            .ok_or_else(|| format!("Layer {:?} not found", layer_id))?;
+
+        match layer {
+            crate::Layer::Raster(raster) => {
+                if let Some(frame) = raster.frames.get(&from_frame).cloned() {
+                    let mut new_frame = frame.clone();
+                    new_frame.frame_number = to_frame;
+                    raster.frames.insert(to_frame, new_frame);
+                    
+                    if raster.base.keyframes.contains(&from_frame) {
+                        raster.base.keyframes.insert(to_frame);
+                    }
+                }
+            }
+            crate::Layer::Vector(vector) => {
+                if let Some(frame) = vector.frames.get(&from_frame).cloned() {
+                    let mut new_frame = frame.clone();
+                    new_frame.frame_number = to_frame;
+                    vector.frames.insert(to_frame, new_frame);
+                    
+                    if vector.base.keyframes.contains(&from_frame) {
+                        vector.base.keyframes.insert(to_frame);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        self.modified = true;
+        Ok(())
     }
 }
 
