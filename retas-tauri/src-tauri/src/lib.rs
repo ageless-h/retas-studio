@@ -7,6 +7,7 @@ use state::AppState;
 
 use retas_core::Layer as RetasLayer;
 use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
+use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerInfo {
@@ -121,17 +122,26 @@ fn get_layers(state: State<Arc<AppState>>) -> Result<Vec<LayerInfo>, String> {
 
 #[tauri::command]
 fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
     let layer = RetasLayer::Raster(retas_core::RasterLayer::new(&name));
-    let id = layer.id();
     let base = layer.base().clone();
-
-    doc.layers.insert(id, layer);
-    doc.timeline.layer_order.push(id);
-
+    let layer_id = base.id;
+    let index = {
+        let doc = state.document.lock().map_err(|e| e.to_string())?;
+        doc.timeline.layer_order.len()
+    };
+    
+    let cmd = LayerAddCommand {
+        layer,
+        index,
+        description: format!("添加图层: {}", name),
+    };
+    
+    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
+    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    undo_manager.execute(Box::new(cmd), &mut doc);
+    
     Ok(LayerInfo {
-        id: base.id.0.to_string(),
+        id: layer_id.0.to_string(),
         name: base.name,
         visible: base.visible,
         locked: base.locked,
@@ -143,9 +153,24 @@ fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, Str
 #[tauri::command]
 fn delete_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&id)?;
-    record_history(&state)?;
+    
+    let (layer, index) = {
+        let doc = state.document.lock().map_err(|e| e.to_string())?;
+        let layer = doc.layers.get(&layer_id).cloned().ok_or("Layer not found")?;
+        let index = doc.timeline.layer_order.iter().position(|x| *x == layer_id).unwrap_or(0);
+        (layer, index)
+    };
+    
+    let cmd = LayerDeleteCommand {
+        layer,
+        index,
+        description: format!("删除图层"),
+    };
+    
+    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
     let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.remove_layer(layer_id);
+    undo_manager.execute(Box::new(cmd), &mut doc);
+    
     Ok(())
 }
 
@@ -533,43 +558,71 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 fn undo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let snapshot = {
-        let doc = state.document.lock().map_err(|e| e.to_string())?;
-        let current = doc.clone();
-        let mut history = state.history.lock().map_err(|e| e.to_string())?;
-        history.undo(&current)
-    };
-    if let Some(doc) = snapshot {
-        *state.document.lock().map_err(|e| e.to_string())? = doc;
+    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
+    
+    if undo_manager.can_undo() {
+        let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+        undo_manager.undo(&mut doc);
         Ok(true)
     } else {
-        Ok(false)
+        drop(undo_manager);
+        let snapshot = {
+            let doc = state.document.lock().map_err(|e| e.to_string())?;
+            let current = doc.clone();
+            let mut history = state.history.lock().map_err(|e| e.to_string())?;
+            history.undo(&current)
+        };
+        if let Some(doc) = snapshot {
+            *state.document.lock().map_err(|e| e.to_string())? = doc;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
 #[tauri::command]
 fn redo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let snapshot = {
-        let doc = state.document.lock().map_err(|e| e.to_string())?;
-        let current = doc.clone();
-        let mut history = state.history.lock().map_err(|e| e.to_string())?;
-        history.redo(&current)
-    };
-    if let Some(doc) = snapshot {
-        *state.document.lock().map_err(|e| e.to_string())? = doc;
+    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
+    
+    if undo_manager.can_redo() {
+        let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+        undo_manager.redo(&mut doc);
         Ok(true)
     } else {
-        Ok(false)
+        drop(undo_manager);
+        let snapshot = {
+            let doc = state.document.lock().map_err(|e| e.to_string())?;
+            let current = doc.clone();
+            let mut history = state.history.lock().map_err(|e| e.to_string())?;
+            history.redo(&current)
+        };
+        if let Some(doc) = snapshot {
+            *state.document.lock().map_err(|e| e.to_string())? = doc;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
 #[tauri::command]
 fn can_undo(state: State<Arc<AppState>>) -> Result<bool, String> {
+    let undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
+    if undo_manager.can_undo() {
+        return Ok(true);
+    }
+    drop(undo_manager);
     Ok(state.history.lock().map_err(|e| e.to_string())?.can_undo())
 }
 
 #[tauri::command]
 fn can_redo(state: State<Arc<AppState>>) -> Result<bool, String> {
+    let undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
+    if undo_manager.can_redo() {
+        return Ok(true);
+    }
+    drop(undo_manager);
     Ok(state.history.lock().map_err(|e| e.to_string())?.can_redo())
 }
 

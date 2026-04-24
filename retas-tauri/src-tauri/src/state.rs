@@ -1,9 +1,11 @@
 use std::sync::{Mutex, Arc};
 use retas_core::{Document, Layer, RasterLayer, RasterFrame, History};
+use retas_core::advanced::undo::UndoManager;
 
 pub struct AppState {
     pub document: Mutex<Document>,
     pub history: Mutex<History>,
+    pub undo_manager: Mutex<UndoManager>,
 }
 
 impl AppState {
@@ -44,6 +46,7 @@ impl AppState {
         Self {
             document: Mutex::new(doc),
             history: Mutex::new(History::new(50)),
+            undo_manager: Mutex::new(UndoManager::new()),
         }
     }
 }
