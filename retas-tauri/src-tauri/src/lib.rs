@@ -7,7 +7,7 @@ use state::AppState;
 
 use retas_core::Layer as RetasLayer;
 use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
-use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand};
+use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand, SnapshotCommand};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerInfo {
@@ -78,17 +78,26 @@ fn parse_layer_id(s: &str) -> Result<retas_core::LayerId, String> {
     Ok(retas_core::LayerId(uuid))
 }
 
-fn record_history(state: &State<Arc<AppState>>) -> Result<(), String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
-    let snapshot = doc.clone();
-    drop(doc);
-    state.history.lock().map_err(|e| e.to_string())?.record(&snapshot);
-    Ok(())
+/// Record a snapshot for undo. Call with the editor lock already held.
+/// Returns the SnapshotCommand (with `before` captured). After mutation,
+/// call `snap.capture_after(doc.clone())` then push to undo_manager.
+fn snapshot_before(doc: &retas_core::Document, description: &str) -> SnapshotCommand {
+    SnapshotCommand::new(doc.clone(), description)
+}
+
+/// Push a completed snapshot command (with after state) into the undo manager.
+/// This is a no-op execute since mutation already happened.
+fn push_snapshot(undo: &mut UndoManager, mut snap: SnapshotCommand, doc: &mut retas_core::Document) {
+    snap.capture_after(doc.clone());
+    // Push directly onto undo stack without re-executing
+    // We use a wrapper: execute is a no-op, so calling execute() is safe
+    undo.execute(Box::new(snap), doc);
 }
 
 #[tauri::command]
 fn get_document_info(state: State<Arc<AppState>>) -> Result<DocumentInfo, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     Ok(DocumentInfo {
         name: doc.settings.name.clone(),
         width: doc.settings.resolution.width,
@@ -100,7 +109,8 @@ fn get_document_info(state: State<Arc<AppState>>) -> Result<DocumentInfo, String
 
 #[tauri::command]
 fn get_layers(state: State<Arc<AppState>>) -> Result<Vec<LayerInfo>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     let mut layers = Vec::new();
 
     for layer_id in &doc.timeline.layer_order {
@@ -122,13 +132,11 @@ fn get_layers(state: State<Arc<AppState>>) -> Result<Vec<LayerInfo>, String> {
 
 #[tauri::command]
 fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
     let layer = RetasLayer::Raster(retas_core::RasterLayer::new(&name));
     let base = layer.base().clone();
     let layer_id = base.id;
-    let index = {
-        let doc = state.document.lock().map_err(|e| e.to_string())?;
-        doc.timeline.layer_order.len()
-    };
+    let index = editor.document.timeline.layer_order.len();
     
     let cmd = LayerAddCommand {
         layer,
@@ -136,9 +144,7 @@ fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, Str
         description: format!("添加图层: {}", name),
     };
     
-    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    undo_manager.execute(Box::new(cmd), &mut doc);
+    editor.undo_manager.execute(Box::new(cmd), &mut editor.document);
     
     Ok(LayerInfo {
         id: layer_id.0.to_string(),
@@ -153,23 +159,18 @@ fn add_layer(name: String, state: State<Arc<AppState>>) -> Result<LayerInfo, Str
 #[tauri::command]
 fn delete_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
     
-    let (layer, index) = {
-        let doc = state.document.lock().map_err(|e| e.to_string())?;
-        let layer = doc.layers.get(&layer_id).cloned().ok_or("Layer not found")?;
-        let index = doc.timeline.layer_order.iter().position(|x| *x == layer_id).unwrap_or(0);
-        (layer, index)
-    };
+    let layer = editor.document.layers.get(&layer_id).cloned().ok_or("Layer not found")?;
+    let index = editor.document.timeline.layer_order.iter().position(|x| *x == layer_id).unwrap_or(0);
     
     let cmd = LayerDeleteCommand {
         layer,
         index,
-        description: format!("删除图层"),
+        description: "删除图层".to_string(),
     };
     
-    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    undo_manager.execute(Box::new(cmd), &mut doc);
+    editor.undo_manager.execute(Box::new(cmd), &mut editor.document);
     
     Ok(())
 }
@@ -177,11 +178,14 @@ fn delete_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
 #[tauri::command]
 fn toggle_layer_visibility(id: String, state: State<Arc<AppState>>) -> Result<bool, String> {
     let layer_id = parse_layer_id(&id)?;
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    if let Some(layer) = doc.layers.get_mut(&layer_id) {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "切换图层可见性");
+    
+    if let Some(layer) = editor.document.layers.get_mut(&layer_id) {
         layer.base_mut().visible = !layer.base().visible;
-        Ok(layer.base().visible)
+        let result = layer.base().visible;
+        push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+        Ok(result)
     } else {
         Err("Layer not found".to_string())
     }
@@ -190,11 +194,14 @@ fn toggle_layer_visibility(id: String, state: State<Arc<AppState>>) -> Result<bo
 #[tauri::command]
 fn toggle_layer_lock(id: String, state: State<Arc<AppState>>) -> Result<bool, String> {
     let layer_id = parse_layer_id(&id)?;
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    if let Some(layer) = doc.layers.get_mut(&layer_id) {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "切换图层锁定");
+    
+    if let Some(layer) = editor.document.layers.get_mut(&layer_id) {
         layer.base_mut().locked = !layer.base().locked;
-        Ok(layer.base().locked)
+        let result = layer.base().locked;
+        push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+        Ok(result)
     } else {
         Err("Layer not found".to_string())
     }
@@ -202,7 +209,8 @@ fn toggle_layer_lock(id: String, state: State<Arc<AppState>>) -> Result<bool, St
 
 #[tauri::command]
 fn get_frame_info(state: State<Arc<AppState>>) -> Result<FrameInfo, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     Ok(FrameInfo {
         current: doc.timeline.current_frame,
         total: doc.timeline.end_frame,
@@ -212,20 +220,21 @@ fn get_frame_info(state: State<Arc<AppState>>) -> Result<FrameInfo, String> {
 
 #[tauri::command]
 fn set_current_frame(frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.timeline.current_frame = frame;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.document.timeline.current_frame = frame;
     Ok(())
 }
 
 #[tauri::command]
 fn add_frame(state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    let new_frame = doc.timeline.end_frame;
-    let width = doc.settings.resolution.width as u32;
-    let height = doc.settings.resolution.height as u32;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "添加帧");
+    
+    let new_frame = editor.document.timeline.end_frame;
+    let width = editor.document.settings.resolution.width as u32;
+    let height = editor.document.settings.resolution.height as u32;
 
-    for layer in doc.layers.values_mut() {
+    for layer in editor.document.layers.values_mut() {
         if let retas_core::Layer::Raster(raster) = layer {
             if !raster.frames.contains_key(&new_frame) {
                 raster.frames.insert(new_frame, retas_core::RasterFrame {
@@ -239,24 +248,26 @@ fn add_frame(state: State<Arc<AppState>>) -> Result<(), String> {
         }
     }
 
-    doc.timeline.end_frame += 1;
-    doc.settings.total_frames += 1;
+    editor.document.timeline.end_frame += 1;
+    editor.document.settings.total_frames += 1;
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn delete_frame(state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    if doc.timeline.end_frame > 1 {
-        let removed_frame = doc.timeline.end_frame - 1;
-        for layer in doc.layers.values_mut() {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    if editor.document.timeline.end_frame > 1 {
+        let snap = snapshot_before(&editor.document, "删除帧");
+        let removed_frame = editor.document.timeline.end_frame - 1;
+        for layer in editor.document.layers.values_mut() {
             if let retas_core::Layer::Raster(raster) = layer {
                 raster.frames.remove(&removed_frame);
             }
         }
-        doc.timeline.end_frame -= 1;
-        doc.settings.total_frames -= 1;
+        editor.document.timeline.end_frame -= 1;
+        editor.document.settings.total_frames -= 1;
+        push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     }
     Ok(())
 }
@@ -312,19 +323,19 @@ fn draw_line_on_pixels(
 
 #[tauri::command]
 fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<String, String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "绘制笔划");
 
     let layer_id = if command.layer_id == "current" {
-        doc.selected_layers.first().copied()
+        editor.document.selected_layers.first().copied()
     } else {
         parse_layer_id(&command.layer_id).ok()
     };
 
     let layer_id = layer_id.ok_or("No selected layer")?;
-    let current_frame = doc.timeline.current_frame;
+    let current_frame = editor.document.timeline.current_frame;
 
-    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
     let raster = match layer {
         retas_core::Layer::Raster(r) => r,
         _ => return Err("Only raster layers support drawing".to_string()),
@@ -349,6 +360,7 @@ fn draw_stroke(command: DrawCommand, state: State<Arc<AppState>>) -> Result<Stri
         );
     }
 
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(format!("绘制了 {} 个点", command.points.len()))
 }
 
@@ -357,13 +369,13 @@ fn apply_stroke_pixels(
     stroke_pixels: Vec<u8>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "应用笔划像素");
 
-    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
-    let current_frame = doc.timeline.current_frame;
+    let layer_id = editor.document.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = editor.document.timeline.current_frame;
 
-    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
     let raster = match layer {
         retas_core::Layer::Raster(r) => r,
         _ => return Err("Only raster layers support drawing".to_string()),
@@ -416,6 +428,7 @@ fn apply_stroke_pixels(
         }
     }
 
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok("笔划已应用".to_string())
 }
 
@@ -434,13 +447,13 @@ fn apply_stroke_pixels_sparse(
     stroke_pixels: Vec<SparsePixel>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "应用稀疏笔划");
 
-    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
-    let current_frame = doc.timeline.current_frame;
+    let layer_id = editor.document.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = editor.document.timeline.current_frame;
 
-    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
     let raster = match layer {
         retas_core::Layer::Raster(r) => r,
         _ => return Err("Only raster layers support drawing".to_string()),
@@ -489,12 +502,14 @@ fn apply_stroke_pixels_sparse(
         }
     }
 
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(format!("应用了 {} 个像素", stroke_pixels.len()))
 }
 
 #[tauri::command]
 fn get_layer_pixels(layer_id: String, state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     let id = parse_layer_id(&layer_id)?;
     let layer = doc.layers.get(&id).ok_or("Layer not found")?;
 
@@ -510,7 +525,8 @@ fn get_layer_pixels(layer_id: String, state: State<Arc<AppState>>) -> Result<Vec
 
 #[tauri::command]
 fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
 
     let width = doc.settings.resolution.width as u32;
     let height = doc.settings.resolution.height as u32;
@@ -558,72 +574,36 @@ fn composite_layers(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 fn undo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    
-    if undo_manager.can_undo() {
-        let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-        undo_manager.undo(&mut doc);
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    if editor.undo_manager.can_undo() {
+        editor.undo_manager.undo(&mut editor.document);
         Ok(true)
     } else {
-        drop(undo_manager);
-        let snapshot = {
-            let doc = state.document.lock().map_err(|e| e.to_string())?;
-            let current = doc.clone();
-            let mut history = state.history.lock().map_err(|e| e.to_string())?;
-            history.undo(&current)
-        };
-        if let Some(doc) = snapshot {
-            *state.document.lock().map_err(|e| e.to_string())? = doc;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(false)
     }
 }
 
 #[tauri::command]
 fn redo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let mut undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    
-    if undo_manager.can_redo() {
-        let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-        undo_manager.redo(&mut doc);
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    if editor.undo_manager.can_redo() {
+        editor.undo_manager.redo(&mut editor.document);
         Ok(true)
     } else {
-        drop(undo_manager);
-        let snapshot = {
-            let doc = state.document.lock().map_err(|e| e.to_string())?;
-            let current = doc.clone();
-            let mut history = state.history.lock().map_err(|e| e.to_string())?;
-            history.redo(&current)
-        };
-        if let Some(doc) = snapshot {
-            *state.document.lock().map_err(|e| e.to_string())? = doc;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(false)
     }
 }
 
 #[tauri::command]
 fn can_undo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    if undo_manager.can_undo() {
-        return Ok(true);
-    }
-    drop(undo_manager);
-    Ok(state.history.lock().map_err(|e| e.to_string())?.can_undo())
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.undo_manager.can_undo())
 }
 
 #[tauri::command]
 fn can_redo(state: State<Arc<AppState>>) -> Result<bool, String> {
-    let undo_manager = state.undo_manager.lock().map_err(|e| e.to_string())?;
-    if undo_manager.can_redo() {
-        return Ok(true);
-    }
-    drop(undo_manager);
-    Ok(state.history.lock().map_err(|e| e.to_string())?.can_redo())
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.undo_manager.can_redo())
 }
 
 #[tauri::command]
@@ -632,36 +612,33 @@ fn open_document(path: String, state: State<Arc<AppState>>) -> Result<DocumentIn
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let new_doc: retas_core::Document = serde_json::from_str(&data).map_err(|e| e.to_string())?;
 
-    {
-        let mut history = state.history.lock().map_err(|e| e.to_string())?;
-        history.clear();
-    }
-
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    *doc = new_doc;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.undo_manager.clear();
+    editor.document = new_doc;
 
     Ok(DocumentInfo {
-        name: doc.settings.name.clone(),
-        width: doc.settings.resolution.width,
-        height: doc.settings.resolution.height,
-        frame_rate: doc.settings.frame_rate,
-        total_frames: doc.settings.total_frames,
+        name: editor.document.settings.name.clone(),
+        width: editor.document.settings.resolution.width,
+        height: editor.document.settings.resolution.height,
+        frame_rate: editor.document.settings.frame_rate,
+        total_frames: editor.document.settings.total_frames,
     })
 }
 
 #[tauri::command]
 fn save_document(path: String, state: State<Arc<AppState>>) -> Result<(), String> {
     println!("保存文档: {}", path);
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
-    let data = serde_json::to_string_pretty(&*doc).map_err(|e| e.to_string())?;
-    drop(doc);
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let data = serde_json::to_string_pretty(&editor.document).map_err(|e| e.to_string())?;
+    drop(editor);
     std::fs::write(&path, data).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn get_xsheet_data(state: State<Arc<AppState>>) -> Result<Vec<XSheetCell>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     let mut cells = Vec::new();
 
     for frame in 0..doc.timeline.end_frame {
@@ -690,38 +667,43 @@ fn get_xsheet_data(state: State<Arc<AppState>>) -> Result<Vec<XSheetCell>, Strin
 #[tauri::command]
 fn toggle_keyframe(layer_id: String, frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&layer_id)?;
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "切换关键帧");
     
-    let layer = doc.layers.get_mut(&layer_id)
+    let layer = editor.document.layers.get_mut(&layer_id)
         .ok_or_else(|| "Layer not found".to_string())?;
     
     layer.toggle_keyframe(frame);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn insert_frames(at_frame: u32, count: u32, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.insert_frames(at_frame, count);
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "插入帧");
+    editor.document.insert_frames(at_frame, count);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn delete_frames(at_frame: u32, count: u32, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.delete_frames(at_frame, count);
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "删除帧");
+    editor.document.delete_frames(at_frame, count);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn copy_frame(layer_id: String, from_frame: u32, to_frame: u32, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&layer_id)?;
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.copy_frame(layer_id, from_frame, to_frame)
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "复制帧");
+    editor.document.copy_frame(layer_id, from_frame, to_frame)?;
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
 }
 
 fn calculate_points_bounds(points: &[retas_core::Point]) -> retas_core::Rect {
@@ -746,14 +728,15 @@ fn calculate_points_bounds(points: &[retas_core::Point]) -> retas_core::Rect {
 
 #[tauri::command]
 fn clear_selection(state: State<Arc<AppState>>) -> Result<(), String> {
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
-    doc.selection = None;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.document.selection = None;
     Ok(())
 }
 
 #[tauri::command]
 fn get_selection(state: State<Arc<AppState>>) -> Result<Option<SelectionDataFrontend>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     
     let sel = match &doc.selection {
         Some(s) if s.is_active => s,
@@ -796,7 +779,8 @@ fn get_selection(state: State<Arc<AppState>>) -> Result<Option<SelectionDataFron
 
 #[tauri::command]
 fn get_selection_bounds(state: State<Arc<AppState>>) -> Result<Option<SelectionBoundsFrontend>, String> {
-    let doc = state.document.lock().map_err(|e| e.to_string())?;
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
     
     let sel = match &doc.selection {
         Some(s) if s.is_active => s,
@@ -814,20 +798,20 @@ fn get_selection_bounds(state: State<Arc<AppState>>) -> Result<Option<SelectionB
 
 #[tauri::command]
 fn invert_selection(state: State<Arc<AppState>>) -> Result<(), String> {
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
     
-    if let Some(sel) = &doc.selection {
-        let width = doc.settings.resolution.width as u32;
-        let height = doc.settings.resolution.height as u32;
-        doc.selection = Some(sel.invert(width, height));
+    if let Some(sel) = &editor.document.selection {
+        let width = editor.document.settings.resolution.width as u32;
+        let height = editor.document.settings.resolution.height as u32;
+        editor.document.selection = Some(sel.invert(width, height));
     }
     Ok(())
 }
 
 #[tauri::command]
 fn update_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "更新选区");
     
     let tool = match selection.selection_type.as_str() {
         "rect" => SelectionTool::Rectangular,
@@ -872,29 +856,30 @@ fn update_selection(selection: SelectionDataFrontend, state: State<Arc<AppState>
     };
     
     if mode == RetasSelectionMode::Replace {
-        doc.selection = Some(new_selection);
-    } else if let Some(existing) = &doc.selection {
-        doc.selection = Some(existing.combine(&new_selection, mode));
+        editor.document.selection = Some(new_selection);
+    } else if let Some(existing) = &editor.document.selection {
+        editor.document.selection = Some(existing.combine(&new_selection, mode));
     } else {
-        doc.selection = Some(new_selection);
+        editor.document.selection = Some(new_selection);
     }
     
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&layer_id)?;
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "应用选区到图层");
     
-    let selection = doc.selection.clone().ok_or("No active selection")?;
+    let selection = editor.document.selection.clone().ok_or("No active selection")?;
     if !selection.is_active {
         return Err("No active selection".to_string());
     }
     
-    let current_frame = doc.timeline.current_frame;
-    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let current_frame = editor.document.timeline.current_frame;
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
     let raster = match layer {
         retas_core::Layer::Raster(r) => r,
         _ => return Err("Only raster layers support selection operations".to_string()),
@@ -911,8 +896,6 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
         _ => return Err("Failed to convert selection to bitmap".to_string()),
     };
     
-    // Selection bitmap origin: the bitmap is sized to selection bounds,
-    // so bitmap pixel (bx, by) maps to frame pixel (bx + offset_x, by + offset_y)
     let sel_bounds = selection.bounds().unwrap_or(retas_core::Rect::ZERO);
     let offset_x = sel_bounds.origin.x.floor() as isize;
     let offset_y = sel_bounds.origin.y.floor() as isize;
@@ -987,18 +970,19 @@ fn apply_selection_to_layer(layer_id: String, operation: String, state: State<Ar
         _ => return Err(format!("Unknown operation: {}", operation)),
     }
     
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn flood_fill_layer(x: u32, y: u32, color: (u8, u8, u8, u8), tolerance: f64, state: State<Arc<AppState>>) -> Result<(), String> {
-    record_history(&state)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "填充");
     
-    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
-    let current_frame = doc.timeline.current_frame;
+    let layer_id = editor.document.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = editor.document.timeline.current_frame;
     
-    let layer = doc.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
     let raster = match layer {
         retas_core::Layer::Raster(r) => r,
         _ => return Err("Only raster layers support fill".to_string()),
@@ -1016,17 +1000,18 @@ fn flood_fill_layer(x: u32, y: u32, color: (u8, u8, u8, u8), tolerance: f64, sta
     let filled = retas_core::composite::flood_fill(frame.image_data.as_ref(), width, height, x, y, fill_color, tolerance);
     
     frame.image_data = std::sync::Arc::new(filled);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
     Ok(())
 }
 
 #[tauri::command]
 fn select_layer(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let layer_id = parse_layer_id(&id)?;
-    let mut doc = state.document.lock().map_err(|e| e.to_string())?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
     
-    if doc.layers.contains_key(&layer_id) {
-        doc.selected_layers.clear();
-        doc.selected_layers.push(layer_id);
+    if editor.document.layers.contains_key(&layer_id) {
+        editor.document.selected_layers.clear();
+        editor.document.selected_layers.push(layer_id);
         Ok(())
     } else {
         Err("Layer not found".to_string())

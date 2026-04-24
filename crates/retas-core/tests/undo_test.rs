@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use retas_core::advanced::undo::*;
     use retas_core::{Document, RasterLayer, Layer};
+    use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode};
 
     fn create_test_document() -> Document {
         let mut doc = Document::new("test".to_string(), 1920.0, 1080.0);
@@ -129,7 +131,7 @@ mod tests {
         
         if let Layer::Raster(raster) = &doc.layers[&layer_id] {
             if let Some(frame) = raster.frames.get(&raster.current_frame) {
-                assert_eq!(frame.image_data, vec![255, 0, 0, 255]);
+                assert_eq!(*frame.image_data, vec![255, 0, 0, 255]);
             }
         }
         
@@ -199,12 +201,15 @@ mod tests {
     fn test_selection_command() {
         let mut doc = create_test_document();
         
-        let selection = SelectionData {
-            selection_type: SelectionType::Rectangular,
-            points: vec![retas_core::Point::new(0.0, 0.0), retas_core::Point::new(100.0, 100.0)],
-            bounds: retas_core::Rect::new(0.0, 0.0, 100.0, 100.0),
+        let selection = Selection {
+            tool: SelectionTool::Rectangular,
+            mode: SelectionMode::Replace,
+            mask: SelectionMask::Rectangular {
+                rect: retas_core::Rect::new(0.0, 0.0, 100.0, 100.0),
+            },
             feather: 0.0,
             anti_aliased: true,
+            is_active: true,
         };
         
         let mut cmd = SelectionCommand {
@@ -227,7 +232,7 @@ mod tests {
         
         if let retas_core::Layer::Raster(raster) = doc.layers.get_mut(&layer_id).unwrap() {
             if let Some(frame) = raster.frames.get_mut(&raster.current_frame) {
-                frame.image_data = vec![100, 150, 200, 255].repeat(4);
+                frame.image_data = Arc::new(vec![100, 150, 200, 255].repeat(4));
             }
         }
         
@@ -244,7 +249,7 @@ mod tests {
         
         if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
             if let Some(frame) = raster.frames.get(&raster.current_frame) {
-                assert_eq!(frame.image_data, vec![255, 0, 0, 255].repeat(4));
+                assert_eq!(*frame.image_data, vec![255, 0, 0, 255].repeat(4));
             }
         }
         
@@ -252,7 +257,7 @@ mod tests {
         
         if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
             if let Some(frame) = raster.frames.get(&raster.current_frame) {
-                assert_eq!(frame.image_data, vec![100, 150, 200, 255].repeat(4));
+                assert_eq!(*frame.image_data, vec![100, 150, 200, 255].repeat(4));
             }
         }
     }
@@ -276,7 +281,7 @@ mod tests {
         
         if let retas_core::Layer::Raster(raster) = &doc.layers[&layer_id] {
             if let Some(frame) = raster.frames.get(&0) {
-                assert_eq!(frame.image_data, new_data);
+                assert_eq!(*frame.image_data, new_data);
             }
         }
         

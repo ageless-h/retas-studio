@@ -599,3 +599,55 @@ impl Command for FrameCommand {
         &self.description
     }
 }
+
+/// Snapshot-based undo command: stores the full document state before mutation.
+/// Used as a bridge for commands not yet migrated to fine-grained Commands.
+/// The `execute` is a no-op (mutation already happened); only `undo`/`redo` swap states.
+#[derive(Debug, Clone)]
+pub struct SnapshotCommand {
+    pub before: Document,
+    pub after: Option<Document>,
+    pub description: String,
+}
+
+impl SnapshotCommand {
+    /// Create a snapshot command. Call BEFORE the mutation with the current document clone.
+    /// After the mutation, call `capture_after()` with the post-mutation document clone.
+    pub fn new(before: Document, description: impl Into<String>) -> Self {
+        Self {
+            before,
+            after: None,
+            description: description.into(),
+        }
+    }
+
+    pub fn capture_after(&mut self, after: Document) {
+        self.after = Some(after);
+    }
+}
+
+impl Command for SnapshotCommand {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn execute(&mut self, _document: &mut Document) {
+        // No-op: mutation was already applied before this command was pushed.
+    }
+
+    fn undo(&mut self, document: &mut Document) {
+        self.after = Some(document.clone());
+        *document = self.before.clone();
+    }
+
+    fn redo(&mut self, document: &mut Document) {
+        if let Some(ref after) = self.after {
+            self.before = document.clone();
+            *document = after.clone();
+        }
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+}

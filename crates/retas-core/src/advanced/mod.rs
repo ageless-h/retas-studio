@@ -18,7 +18,7 @@ pub mod render_queue;
 
 pub use brush::{BrushSettings, BrushPoint, BrushStroke, BrushType, BrushBlendMode, BrushEngine, BrushDynamics, BrushTexture, BrushScatter, BrushShape, AngleControl};
 pub use animation::{TimelineState, PlaybackState, PlaybackSettings, OnionSkinSettings, TimelineMarker, ExposureSheet, ExposureColumn, ExposureCell, PlaybackController};
-pub use undo::{Command, UndoManager, UndoState, StrokeCommand, TransformCommand, LayerAddCommand, LayerDeleteCommand, LayerMoveCommand, LayerPropertyCommand, SelectionCommand, FillCommand, FrameCommand, PropertyValue};
+pub use undo::{Command, UndoManager, UndoState, StrokeCommand, TransformCommand, LayerAddCommand, LayerDeleteCommand, LayerMoveCommand, LayerPropertyCommand, SelectionCommand, FillCommand, FrameCommand, PropertyValue, SnapshotCommand};
 pub use selection::{Selection, SelectionMask, SelectionTool, SelectionMode, MagicWandSelector};
 pub use coloring::{ColoringEngine, FillSettings, FillMode};
 pub use effect_processor::EffectProcessor;

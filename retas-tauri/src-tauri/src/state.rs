@@ -1,14 +1,15 @@
-use std::sync::{Mutex, Arc};
-use retas_core::{Document, Layer, RasterLayer, RasterFrame, History};
+use std::sync::Arc;
+use retas_core::{Document, Layer, RasterLayer, RasterFrame};
 use retas_core::advanced::undo::UndoManager;
 
-pub struct AppState {
-    pub document: Mutex<Document>,
-    pub history: Mutex<History>,
-    pub undo_manager: Mutex<UndoManager>,
+/// Unified editor state behind a single Mutex.
+/// Eliminates the 3-Mutex deadlock class (Issue #17).
+pub struct EditorState {
+    pub document: Document,
+    pub undo_manager: UndoManager,
 }
 
-impl AppState {
+impl EditorState {
     pub fn new() -> Self {
         let mut doc = Document::new("未命名", 1920.0, 1080.0);
 
@@ -44,9 +45,20 @@ impl AppState {
         doc.selected_layers.push(layer2_id);
 
         Self {
-            document: Mutex::new(doc),
-            history: Mutex::new(History::new(50)),
-            undo_manager: Mutex::new(UndoManager::new()),
+            document: doc,
+            undo_manager: UndoManager::new(),
+        }
+    }
+}
+
+pub struct AppState {
+    pub editor: std::sync::Mutex<EditorState>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            editor: std::sync::Mutex::new(EditorState::new()),
         }
     }
 }
