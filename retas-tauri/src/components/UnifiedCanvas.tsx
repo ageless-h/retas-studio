@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useCanvasKit } from "../hooks/useCanvasKit";
-import { applyStrokePixels, compositeLayers, floodFillLayer, SelectionData, pickColor } from "../api";
+import { applyStrokePixels, compositeLayers, floodFillLayer, SelectionData, pickColor, moveLayerPixels } from "../api";
 import { canvasMonitor } from "../utils/CanvasMonitor";
 
 export interface OnionSkinSettings {
@@ -82,6 +82,9 @@ export default function UnifiedCanvas({
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const selectionPointsRef = useRef<{ x: number; y: number }[]>([]);
   const [currentSelectionRect, setCurrentSelectionRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
+  const isMovingRef = useRef(false);
+  const moveStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const [debugInfo, setDebugInfo] = useState({
     isDrawing: false,
@@ -555,6 +558,13 @@ export default function UnifiedCanvas({
         return;
       }
       
+      if (tool === "move") {
+        isMovingRef.current = true;
+        const pos = getCanvasPos(e);
+        moveStartRef.current = { x: pos.x, y: pos.y };
+        return;
+      }
+      
       if (tool === "brush" || tool === "eraser") {
         isDrawingRef.current = true;
         const pos = getCanvasPos(e);
@@ -605,6 +615,21 @@ export default function UnifiedCanvas({
           };
           setCurrentSelectionRect(rect);
           drawSelectionPreview();
+        }
+        return;
+      }
+      
+      if (tool === "move" && isMovingRef.current && moveStartRef.current && activeLayerId) {
+        const pos = getCanvasPos(e);
+        const dx = Math.round(pos.x - moveStartRef.current.x);
+        const dy = Math.round(pos.y - moveStartRef.current.y);
+        if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
+          moveStartRef.current = { x: pos.x, y: pos.y };
+          moveLayerPixels(activeLayerId, dx, dy)
+            .then(() => {
+              window.dispatchEvent(new CustomEvent("retas:state-changed"));
+            })
+            .catch((err) => console.error("Move failed:", err));
         }
         return;
       }
@@ -697,6 +722,13 @@ export default function UnifiedCanvas({
         
         selectionStartRef.current = null;
         selectionPointsRef.current = [];
+        return;
+      }
+      
+      if (isMovingRef.current && moveStartRef.current) {
+        isMovingRef.current = false;
+        // Move is committed on mouse up (the visual offset was a preview)
+        moveStartRef.current = null;
         return;
       }
       
@@ -853,6 +885,59 @@ export default function UnifiedCanvas({
           <div>tool: {debugInfo.tool}</div>
           <div>size: {debugInfo.brushSize}</div>
           <div>zoom: {(viewZoom * 100).toFixed(0)}%</div>
+        </div>
+      )}
+      {/* Top ruler */}
+      {showGuides && (
+        <div style={{
+          position: "absolute", top: 0, left: 20, right: 0, height: 20,
+          background: "#0d1117", borderBottom: "1px solid #30363d",
+          overflow: "hidden", pointerEvents: "none", zIndex: 50,
+        }}>
+          <svg width="100%" height="20" style={{ display: "block" }}>
+            {(() => {
+              const marks: JSX.Element[] = [];
+              const step = viewZoom >= 2 ? 50 : viewZoom >= 0.5 ? 100 : 200;
+              for (let px = 0; px <= DOC_WIDTH; px += step) {
+                const screenX = px * viewZoom + panRef.current.x - 20;
+                if (screenX < -50 || screenX > 3000) continue;
+                marks.push(
+                  <g key={px}>
+                    <line x1={screenX} y1={14} x2={screenX} y2={20} stroke="#484f58" strokeWidth={1} />
+                    <text x={screenX + 2} y={12} fill="#8b949e" fontSize={9} fontFamily="monospace">{px}</text>
+                  </g>
+                );
+              }
+              return marks;
+            })()}
+          </svg>
+        </div>
+      )}
+      {/* Left ruler */}
+      {showGuides && (
+        <div style={{
+          position: "absolute", top: 20, left: 0, bottom: 0, width: 20,
+          background: "#0d1117", borderRight: "1px solid #30363d",
+          overflow: "hidden", pointerEvents: "none", zIndex: 50,
+        }}>
+          <svg width="20" height="100%" style={{ display: "block" }}>
+            {(() => {
+              const marks: JSX.Element[] = [];
+              const step = viewZoom >= 2 ? 50 : viewZoom >= 0.5 ? 100 : 200;
+              for (let py = 0; py <= DOC_HEIGHT; py += step) {
+                const screenY = py * viewZoom + panRef.current.y - 20;
+                if (screenY < -50 || screenY > 3000) continue;
+                marks.push(
+                  <g key={py}>
+                    <line x1={14} y1={screenY} x2={20} y2={screenY} stroke="#484f58" strokeWidth={1} />
+                    <text x={2} y={screenY - 2} fill="#8b949e" fontSize={8} fontFamily="monospace"
+                      transform={`rotate(-90, 2, ${screenY - 2})`}>{py}</text>
+                  </g>
+                );
+              }
+              return marks;
+            })()}
+          </svg>
         </div>
       )}
     </div>

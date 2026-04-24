@@ -1694,6 +1694,126 @@ fn resize_document(
     Ok(())
 }
 
+#[tauri::command]
+fn move_layer_pixels(
+    layer_id: String,
+    dx: i32,
+    dy: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "移动图层");
+    let current_frame = editor.document.timeline.current_frame;
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support move".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let w = frame.width as i32;
+    let h = frame.height as i32;
+    let old_pixels = Arc::clone(&frame.image_data);
+    let mut new_pixels = vec![0u8; (w * h * 4) as usize];
+    
+    for y in 0..h {
+        for x in 0..w {
+            let sx = x - dx;
+            let sy = y - dy;
+            if sx >= 0 && sx < w && sy >= 0 && sy < h {
+                let src_idx = ((sy * w + sx) * 4) as usize;
+                let dst_idx = ((y * w + x) * 4) as usize;
+                new_pixels[dst_idx..dst_idx + 4].copy_from_slice(&old_pixels[src_idx..src_idx + 4]);
+            }
+        }
+    }
+    
+    frame.image_data = Arc::new(new_pixels);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn flip_layer(
+    layer_id: String,
+    horizontal: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, if horizontal { "水平翻转" } else { "垂直翻转" });
+    let current_frame = editor.document.timeline.current_frame;
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support flip".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let w = frame.width as usize;
+    let h = frame.height as usize;
+    let old_pixels = Arc::clone(&frame.image_data);
+    let mut new_pixels = vec![0u8; w * h * 4];
+    
+    for y in 0..h {
+        for x in 0..w {
+            let (sx, sy) = if horizontal { (w - 1 - x, y) } else { (x, h - 1 - y) };
+            let src_idx = (sy * w + sx) * 4;
+            let dst_idx = (y * w + x) * 4;
+            new_pixels[dst_idx..dst_idx + 4].copy_from_slice(&old_pixels[src_idx..src_idx + 4]);
+        }
+    }
+    
+    frame.image_data = Arc::new(new_pixels);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn rotate_layer_90(
+    layer_id: String,
+    clockwise: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, if clockwise { "顺时针旋转90°" } else { "逆时针旋转90°" });
+    let current_frame = editor.document.timeline.current_frame;
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support rotate".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let w = frame.width as usize;
+    let h = frame.height as usize;
+    let old_pixels = Arc::clone(&frame.image_data);
+    // 90° rotation swaps dimensions
+    let new_w = h;
+    let new_h = w;
+    let mut new_pixels = vec![0u8; new_w * new_h * 4];
+    
+    for y in 0..h {
+        for x in 0..w {
+            let (nx, ny) = if clockwise { (h - 1 - y, x) } else { (y, w - 1 - x) };
+            let src_idx = (y * w + x) * 4;
+            let dst_idx = (ny * new_w + nx) * 4;
+            new_pixels[dst_idx..dst_idx + 4].copy_from_slice(&old_pixels[src_idx..src_idx + 4]);
+        }
+    }
+    
+    frame.image_data = Arc::new(new_pixels);
+    frame.width = new_w as u32;
+    frame.height = new_h as u32;
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -1752,6 +1872,9 @@ pub fn run() {
             set_layer_parent,
             get_composited_frame,
             resize_document,
+            move_layer_pixels,
+            flip_layer,
+            rotate_layer_90,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

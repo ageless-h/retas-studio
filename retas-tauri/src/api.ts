@@ -427,3 +427,18 @@ export async function resizeDocument(width: number, height: number): Promise<voi
   return safeInvoke("resize_document", { width, height });
 }
 
+export async function moveLayerPixels(layerId: string, dx: number, dy: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("move_layer_pixels", { layerId, dx, dy });
+}
+
+export async function flipLayer(layerId: string, horizontal: boolean): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("flip_layer", { layerId, horizontal });
+}
+
+export async function rotateLayer90(layerId: string, clockwise: boolean): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("rotate_layer_90", { layerId, clockwise });
+}
+

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button, Slider } from "@blueprintjs/core";
-import { Eye, EyeOff, Lock, Unlock, Plus, Trash2, GripVertical, Copy } from "lucide-react";
+import { Eye, EyeOff, Lock, Unlock, Plus, Trash2, GripVertical, Copy, FolderPlus, ChevronRight, ChevronDown } from "lucide-react";
 import {
   getLayers, addLayer, deleteLayer, toggleLayerVisibility,
   toggleLayerLock, selectLayer, renameLayer, setLayerOpacity, moveLayer,
-  duplicateLayer,
+  duplicateLayer, createLayerGroup, setLayerParent,
   LayerInfo,
 } from "../api";
 
@@ -18,6 +18,7 @@ export default function LayerPanel() {
   const [editingName, setEditingName] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadLayers = useCallback(async () => {
@@ -102,6 +103,36 @@ export default function LayerPanel() {
       window.dispatchEvent(new CustomEvent("retas:state-changed"));
     } catch (e) {
       console.error("复制图层失败:", e);
+    }
+  };
+
+  const handleAddGroup = async () => {
+    try {
+      const group = await createLayerGroup(`组 ${layers.filter(l => l.layer_type === "Group").length + 1}`);
+      await loadLayers();
+      setActiveLayer(group.id);
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("创建图层组失败:", e);
+    }
+  };
+
+  const toggleGroupCollapse = (id: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDropIntoGroup = async (layerId: string, groupId: string) => {
+    try {
+      await setLayerParent(layerId, groupId);
+      await loadLayers();
+      window.dispatchEvent(new CustomEvent("retas:state-changed"));
+    } catch (e) {
+      console.error("移入组失败:", e);
     }
   };
 
@@ -196,6 +227,8 @@ export default function LayerPanel() {
             const isActive = activeLayer === layer.id;
             const isEditing = editingId === layer.id;
             const isDragTarget = dropTargetId === layer.id;
+            const isGroup = layer.layer_type === "Group";
+            const isCollapsed = collapsedGroups.has(layer.id);
 
             return (
               <div key={layer.id}>
@@ -227,6 +260,15 @@ export default function LayerPanel() {
                     style={{ cursor: "grab", opacity: 0.4, flexShrink: 0 }}
                   />
 
+                  {isGroup && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); toggleGroupCollapse(layer.id); }}
+                      style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
+                    >
+                      {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    </span>
+                  )}
+
                   {isEditing ? (
                     <input
                       ref={inputRef}
@@ -247,7 +289,9 @@ export default function LayerPanel() {
                       }}
                     />
                   ) : (
-                    <span style={{ flex: 1, userSelect: "none" }}>{layer.name}</span>
+                    <span style={{ flex: 1, userSelect: "none" }}>
+                      {isGroup ? "📁 " : ""}{layer.name}
+                    </span>
                   )}
 
                   <Button
@@ -300,6 +344,7 @@ export default function LayerPanel() {
 
       <div style={{ padding: 8, display: "flex", gap: 4 }}>
         <Button minimal small data-testid="layer-add" icon={<Plus size={14} />} onClick={handleAddLayer}>新建</Button>
+        <Button minimal small icon={<FolderPlus size={14} />} onClick={handleAddGroup} title="新建图层组">组</Button>
         <Button minimal small data-testid="layer-duplicate" icon={<Copy size={14} />} onClick={handleDuplicateLayer} title="复制图层">复制</Button>
         <Button minimal small data-testid="layer-delete" icon={<Trash2 size={14} />} onClick={handleDeleteLayer}>删除</Button>
       </div>
