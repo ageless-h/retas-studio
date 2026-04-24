@@ -22,6 +22,8 @@ interface UnifiedCanvasProps {
   onionSkin?: OnionSkinSettings;
   currentFrame?: number;
   totalFrames?: number;
+  showGrid?: boolean;
+  showGuides?: boolean;
   selection?: SelectionData | null;
   selectionTool?: "rect" | "ellipse" | "lasso" | "magicWand";
   selectionMode?: "replace" | "add" | "subtract" | "intersect";
@@ -39,6 +41,8 @@ export default function UnifiedCanvas({
   onionSkin,
   currentFrame = 1,
   totalFrames = 100,
+  showGrid = false,
+  showGuides = false,
   selection: _selection,
   selectionTool = "rect",
   selectionMode = "replace",
@@ -254,8 +258,44 @@ export default function UnifiedCanvas({
     if (bgImageRef.current) {
       ctx.drawImage(bgImageRef.current, 0, 0);
     }
+    
+    // Grid overlay
+    if (showGrid) {
+      const gridPaint = new canvasKit.Paint();
+      gridPaint.setStyle(canvasKit.PaintStyle.Stroke);
+      gridPaint.setStrokeWidth(0.5);
+      gridPaint.setColor(canvasKit.Color4f(1, 1, 1, 0.08));
+      const gridSize = 64;
+      for (let x = gridSize; x < DOC_WIDTH; x += gridSize) {
+        ctx.drawLine(x, 0, x, DOC_HEIGHT, gridPaint);
+      }
+      for (let y = gridSize; y < DOC_HEIGHT; y += gridSize) {
+        ctx.drawLine(0, y, DOC_WIDTH, y, gridPaint);
+      }
+      gridPaint.delete();
+    }
+    
+    // Center guides
+    if (showGuides) {
+      const guidePaint = new canvasKit.Paint();
+      guidePaint.setStyle(canvasKit.PaintStyle.Stroke);
+      guidePaint.setStrokeWidth(1);
+      guidePaint.setColor(canvasKit.Color4f(0, 1, 1, 0.4));
+      // Horizontal center
+      ctx.drawLine(0, DOC_HEIGHT / 2, DOC_WIDTH, DOC_HEIGHT / 2, guidePaint);
+      // Vertical center
+      ctx.drawLine(DOC_WIDTH / 2, 0, DOC_WIDTH / 2, DOC_HEIGHT, guidePaint);
+      // Rule of thirds
+      guidePaint.setColor(canvasKit.Color4f(1, 0.5, 0, 0.2));
+      ctx.drawLine(DOC_WIDTH / 3, 0, DOC_WIDTH / 3, DOC_HEIGHT, guidePaint);
+      ctx.drawLine(DOC_WIDTH * 2 / 3, 0, DOC_WIDTH * 2 / 3, DOC_HEIGHT, guidePaint);
+      ctx.drawLine(0, DOC_HEIGHT / 3, DOC_WIDTH, DOC_HEIGHT / 3, guidePaint);
+      ctx.drawLine(0, DOC_HEIGHT * 2 / 3, DOC_WIDTH, DOC_HEIGHT * 2 / 3, guidePaint);
+      guidePaint.delete();
+    }
+    
     surfaceRef.current.flush();
-  }, [canvasKit, onionSkin]);
+  }, [canvasKit, onionSkin, showGrid, showGuides]);
 
   const renderOnionSkin = useCallback((ctx: any) => {
     if (!canvasKit || !onionSkin?.enabled) return;

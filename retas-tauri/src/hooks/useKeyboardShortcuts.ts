@@ -1,5 +1,8 @@
 import { useEffect, useCallback } from "react";
-import { undo, redo, clearSelection } from "../api";
+import { undo, redo, clearSelection, copySelectionPixels, pastePixels } from "../api";
+
+// Module-level clipboard buffer for pixel data
+let clipboardBuffer: number[] | null = null;
 
 export interface ShortcutConfig {
   key: string;
@@ -52,6 +55,34 @@ export function useKeyboardShortcuts(
     if ((e.ctrlKey || e.metaKey) && e.key === "e") {
       e.preventDefault();
       onExport?.();
+      return;
+    }
+
+    // Ctrl+C — Copy selection pixels
+    if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      e.preventDefault();
+      try {
+        const data = await copySelectionPixels();
+        if (data && data.length > 8) {
+          clipboardBuffer = data;
+        }
+      } catch (err) {
+        console.error("Copy failed:", err);
+      }
+      return;
+    }
+
+    // Ctrl+V — Paste pixels at origin (0,0)
+    if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+      e.preventDefault();
+      if (clipboardBuffer && clipboardBuffer.length > 8) {
+        try {
+          await pastePixels(clipboardBuffer, 0, 0);
+          window.dispatchEvent(new CustomEvent("retas:state-changed"));
+        } catch (err) {
+          console.error("Paste failed:", err);
+        }
+      }
       return;
     }
 
@@ -123,5 +154,7 @@ export const DEFAULT_SHORTCUTS: ShortcutConfig[] = [
   { key: "y", ctrl: true, action: () => {}, description: "重做" },
   { key: "z", ctrl: true, shift: true, action: () => {}, description: "重做" },
   { key: "e", ctrl: true, action: () => {}, description: "导出" },
+  { key: "c", ctrl: true, action: () => {}, description: "复制选区" },
+  { key: "v", ctrl: true, action: () => {}, description: "粘贴" },
   { key: "Delete", action: () => {}, description: "清除选区" },
 ];

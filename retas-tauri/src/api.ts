@@ -149,6 +149,32 @@ export async function duplicateLayer(id: string): Promise<LayerInfo> {
   return safeInvoke<LayerInfo>("duplicate_layer", { id });
 }
 
+export interface EffectParams {
+  effectType: string;
+  radius?: number;
+  brightness?: number;
+  contrast?: number;
+  hue?: number;
+  saturation?: number;
+  lightness?: number;
+  opacity?: number;
+}
+
+export async function applyEffect(effect: EffectParams): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("apply_effect", { effect });
+}
+
+export async function copySelectionPixels(): Promise<number[]> {
+  if (!isTauri) return [];
+  return safeInvoke<number[]>("copy_selection_pixels");
+}
+
+export async function pastePixels(data: number[], x: number, y: number): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return safeInvoke("paste_pixels", { data, x: Math.floor(x), y: Math.floor(y) });
+}
+
 export async function getFrameInfo(): Promise<FrameInfo> {
   if (!isTauri) return mockGetFrameInfo();
   const info = await safeInvoke<FrameInfo>("get_frame_info");

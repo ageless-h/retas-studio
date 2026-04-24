@@ -9,6 +9,8 @@ use retas_core::Layer as RetasLayer;
 use retas_core::advanced::selection::{Selection, SelectionMask, SelectionTool, SelectionMode as RetasSelectionMode};
 use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDeleteCommand, SnapshotCommand};
 use retas_core::advanced::brush::{BrushEngine, BrushSettings, BrushPoint, BrushType, BrushBlendMode};
+use retas_core::advanced::effect_processor::EffectProcessor;
+use retas_core::advanced::effects::{Effect, EffectType};
 use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1246,6 +1248,213 @@ fn duplicate_layer(id: String, state: State<Arc<AppState>>) -> Result<LayerInfo,
     })
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EffectParams {
+    pub effect_type: String,
+    pub radius: Option<f64>,
+    pub brightness: Option<f64>,
+    pub contrast: Option<f64>,
+    pub hue: Option<f64>,
+    pub saturation: Option<f64>,
+    pub lightness: Option<f64>,
+    pub opacity: Option<f64>,
+}
+
+#[tauri::command]
+fn apply_effect(effect: EffectParams, state: State<Arc<AppState>>) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "应用效果");
+    
+    let layer_id = editor.document.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = editor.document.timeline.current_frame;
+    
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support effects".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let width = frame.width;
+    let height = frame.height;
+    
+    let effect_obj = match effect.effect_type.as_str() {
+        "blur" | "gaussianBlur" => {
+            let mut e = Effect::new(EffectType::GaussianBlur);
+            if let Some(r) = effect.radius {
+                e.parameters = retas_core::advanced::effects::EffectParameters::GaussianBlur { radius: r };
+            }
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        "brightnessContrast" => {
+            let mut e = Effect::new(EffectType::BrightnessContrast);
+            e.parameters = retas_core::advanced::effects::EffectParameters::BrightnessContrast {
+                brightness: effect.brightness.unwrap_or(0.0),
+                contrast: effect.contrast.unwrap_or(0.0),
+            };
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        "hueSaturation" => {
+            let mut e = Effect::new(EffectType::HueSaturation);
+            e.parameters = retas_core::advanced::effects::EffectParameters::HueSaturation {
+                hue: effect.hue.unwrap_or(0.0),
+                saturation: effect.saturation.unwrap_or(0.0),
+                lightness: effect.lightness.unwrap_or(0.0),
+            };
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        "invert" => {
+            let mut e = Effect::new(EffectType::Invert);
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        "posterize" => {
+            let mut e = Effect::new(EffectType::Posterize);
+            e.parameters = retas_core::advanced::effects::EffectParameters::Posterize {
+                levels: effect.radius.unwrap_or(4.0) as u32,
+            };
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        "sharpen" => {
+            let mut e = Effect::new(EffectType::Sharpen);
+            if let Some(r) = effect.radius {
+                e.parameters = retas_core::advanced::effects::EffectParameters::Sharpen { amount: r };
+            }
+            if let Some(o) = effect.opacity { e.opacity = o; }
+            e
+        }
+        other => return Err(format!("Unknown effect: {}", other)),
+    };
+    
+    let pixels = frame.image_data.as_ref();
+    let result = EffectProcessor::apply_effect(pixels, width, height, &effect_obj);
+    frame.image_data = std::sync::Arc::new(result);
+    
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+/// Copy pixels from the current selection on the active layer into a serializable buffer.
+/// Returns { width, height, data: Vec<u8> } for the frontend to hold.
+#[tauri::command]
+fn copy_selection_pixels(state: State<Arc<AppState>>) -> Result<Vec<u8>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let doc = &editor.document;
+    
+    let sel = doc.selection.as_ref().filter(|s| s.is_active).ok_or("No active selection")?;
+    let bounds = sel.bounds().ok_or("Selection has no bounds")?;
+    
+    let layer_id = doc.selected_layers.first().copied().ok_or("No selected layer")?;
+    let layer = doc.layers.get(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support copy".to_string()),
+    };
+    let current_frame = doc.timeline.current_frame;
+    let frame = raster.frames.get(&current_frame).ok_or("No frame data")?;
+    let fw = frame.width as usize;
+    let fh = frame.height as usize;
+    let pixels = frame.image_data.as_ref();
+    
+    let x0 = bounds.origin.x.floor().max(0.0) as usize;
+    let y0 = bounds.origin.y.floor().max(0.0) as usize;
+    let w = bounds.size.width.ceil() as usize;
+    let h = bounds.size.height.ceil() as usize;
+    
+    // Header: 4 bytes width + 4 bytes height + pixel data
+    let mut result = Vec::with_capacity(8 + w * h * 4);
+    result.extend_from_slice(&(w as u32).to_le_bytes());
+    result.extend_from_slice(&(h as u32).to_le_bytes());
+    
+    for row in 0..h {
+        for col in 0..w {
+            let sx = x0 + col;
+            let sy = y0 + row;
+            if sx < fw && sy < fh {
+                let idx = (sy * fw + sx) * 4;
+                result.push(pixels[idx]);
+                result.push(pixels[idx + 1]);
+                result.push(pixels[idx + 2]);
+                result.push(pixels[idx + 3]);
+            } else {
+                result.extend_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+    
+    Ok(result)
+}
+
+/// Paste pixel buffer (from copy_selection_pixels) onto the active layer at the specified position.
+#[tauri::command]
+fn paste_pixels(data: Vec<u8>, x: i32, y: i32, state: State<Arc<AppState>>) -> Result<(), String> {
+    if data.len() < 8 {
+        return Err("Invalid paste data".to_string());
+    }
+    
+    let w = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let h = u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+    let pixel_data = &data[8..];
+    
+    if pixel_data.len() != w * h * 4 {
+        return Err("Paste data size mismatch".to_string());
+    }
+    
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "粘贴像素");
+    
+    let layer_id = editor.document.selected_layers.first().copied().ok_or("No selected layer")?;
+    let current_frame = editor.document.timeline.current_frame;
+    
+    let layer = editor.document.layers.get_mut(&layer_id).ok_or("Layer not found")?;
+    let raster = match layer {
+        retas_core::Layer::Raster(r) => r,
+        _ => return Err("Only raster layers support paste".to_string()),
+    };
+    
+    let frame = raster.frames.get_mut(&current_frame).ok_or("No frame data")?;
+    let fw = frame.width as i32;
+    let fh = frame.height as i32;
+    let frame_pixels = frame.get_image_data_mut();
+    
+    for row in 0..h {
+        for col in 0..w {
+            let dx = x + col as i32;
+            let dy = y + row as i32;
+            if dx < 0 || dy < 0 || dx >= fw || dy >= fh { continue; }
+            
+            let src_idx = (row * w + col) * 4;
+            let src_a = pixel_data[src_idx + 3];
+            if src_a == 0 { continue; }
+            
+            let dst_idx = (dy as usize * fw as usize + dx as usize) * 4;
+            if src_a == 255 {
+                frame_pixels[dst_idx] = pixel_data[src_idx];
+                frame_pixels[dst_idx + 1] = pixel_data[src_idx + 1];
+                frame_pixels[dst_idx + 2] = pixel_data[src_idx + 2];
+                frame_pixels[dst_idx + 3] = 255;
+            } else {
+                let sa = src_a as f64 / 255.0;
+                let da = frame_pixels[dst_idx + 3] as f64 / 255.0;
+                let oa = sa + da * (1.0 - sa);
+                if oa > 0.0 {
+                    frame_pixels[dst_idx] = ((pixel_data[src_idx] as f64 * sa + frame_pixels[dst_idx] as f64 * da * (1.0 - sa)) / oa) as u8;
+                    frame_pixels[dst_idx + 1] = ((pixel_data[src_idx + 1] as f64 * sa + frame_pixels[dst_idx + 1] as f64 * da * (1.0 - sa)) / oa) as u8;
+                    frame_pixels[dst_idx + 2] = ((pixel_data[src_idx + 2] as f64 * sa + frame_pixels[dst_idx + 2] as f64 * da * (1.0 - sa)) / oa) as u8;
+                    frame_pixels[dst_idx + 3] = (oa * 255.0) as u8;
+                }
+            }
+        }
+    }
+    
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
 #[tauri::command]
 fn export_image(
     output_path: String,
@@ -1350,6 +1559,9 @@ pub fn run() {
             set_layer_blend_mode,
             new_document,
             duplicate_layer,
+            apply_effect,
+            copy_selection_pixels,
+            paste_pixels,
             export_image,
             export_frame_sequence,
         ])

@@ -3,7 +3,8 @@ import { ButtonGroup, Button, Popover, Menu, MenuDivider, Checkbox } from "@blue
 import {
   Brush, Eraser, PenTool, PaintBucket,
   Move, ZoomIn, ZoomOut, Hand, ChevronDown,
-  Undo2, Redo2, FolderOpen, Save, FilePlus
+  Undo2, Redo2, FolderOpen, Save, FilePlus,
+  Grid3X3, Ruler
 } from "lucide-react";
 import { DockviewReact, DockviewReadyEvent, IDockviewPanelProps } from "dockview";
 import "dockview/dist/styles/dockview.css";
@@ -31,6 +32,7 @@ import UnifiedCanvas from "./components/UnifiedCanvas";
 import { OnionSkinPanel, OnionSkinSettings } from "./components/OnionSkinPanel";
 import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPanel";
 import XSheetPanel from "./components/XSheetPanel";
+import EffectsPanel from "./components/EffectsPanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand";
 
@@ -64,6 +66,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
   onionSkin?: OnionSkinSettings;
   currentFrame?: number;
   totalFrames?: number;
+  showGrid?: boolean;
+  showGuides?: boolean;
   selection?: SelectionData | null;
   selectionTool?: "rect" | "ellipse" | "lasso" | "magicWand";
   selectionMode?: "replace" | "add" | "subtract" | "intersect";
@@ -76,6 +80,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
   const onionSkin = props.params.onionSkin;
   const currentFrame = props.params.currentFrame || 1;
   const totalFrames = props.params.totalFrames || 100;
+  const showGrid = props.params.showGrid || false;
+  const showGuides = props.params.showGuides || false;
   const selection = props.params.selection;
   const selectionTool = props.params.selectionTool || "rect";
   const selectionMode = props.params.selectionMode || "replace";
@@ -89,6 +95,8 @@ function CanvasPanel(props: IDockviewPanelProps<{
     onionSkin={onionSkin}
     currentFrame={currentFrame}
     totalFrames={totalFrames}
+    showGrid={showGrid}
+    showGuides={showGuides}
     selection={selection}
     selectionTool={selectionTool}
     selectionMode={selectionMode}
@@ -334,6 +342,7 @@ const components = {
   timeline: TimelinePanel,
   animationProps: AnimationPropsPanel,
   blendModes: BlendModesPanel,
+  effectsPanel: EffectsPanel,
   xsheet: XSheetWrapper,
 };
 
@@ -380,6 +389,8 @@ function App() {
   const [selectionTool, setSelectionTool] = useState<"rect" | "ellipse" | "lasso" | "magicWand">("rect");
   const [selectionMode, setSelectionMode] = useState<"replace" | "add" | "subtract" | "intersect">("replace");
   const [newDocDialogOpen, setNewDocDialogOpen] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
+  const [showGuides, setShowGuides] = useState(false);
 
   const visibleTools = allTools.filter(t => visibleToolIds.has(t.id));
 
@@ -411,6 +422,36 @@ function App() {
     }, 1000 / fps);
     return () => clearInterval(interval);
   }, [isPlaying, fps, totalFrames]);
+
+  // Tauri file drop handler
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        unlisten = await win.onDragDropEvent(async (event) => {
+          if (event.payload.type === "drop") {
+            const paths = event.payload.paths;
+            if (!paths || paths.length === 0) return;
+            const filePath = paths[0];
+            // Only attempt to open .json project files
+            if (filePath.endsWith(".json") || filePath.endsWith(".retas")) {
+              try {
+                await openDocument(filePath);
+                window.dispatchEvent(new CustomEvent("retas:state-changed"));
+              } catch (e) {
+                console.error("拖拽打开文件失败:", e);
+              }
+            }
+          }
+        });
+      } catch {
+        // Not running in Tauri environment
+      }
+    })();
+    return () => { unlisten?.(); };
+  }, []);
 
   const toggleToolVisibility = (toolId: Tool) => {
     setVisibleToolIds(prev => {
@@ -522,6 +563,12 @@ function App() {
         title: "混合模式",
         position: { referencePanel: "canvas", direction: "right" },
       });
+      api.addPanel({
+        id: "effects",
+        component: "effectsPanel",
+        title: "效果",
+        position: { referencePanel: "blendModes", direction: "below" },
+      });
     }
   }, [currentTool, zoom, brushColor, brushSize, currentWorkspace, isPlaying, currentFrame, totalFrames, fps, onionSkinSettings, selectionData, selectionTool, selectionMode]);
 
@@ -537,6 +584,8 @@ function App() {
           onionSkin: onionSkinSettings,
           currentFrame,
           totalFrames,
+          showGrid,
+          showGuides,
           selection: selectionData,
           selectionTool,
           selectionMode,
@@ -544,7 +593,7 @@ function App() {
         });
       }
     }
-  }, [currentTool, zoom, brushColor, brushSize, onionSkinSettings, currentFrame, totalFrames, selectionData, selectionTool, selectionMode]);
+  }, [currentTool, zoom, brushColor, brushSize, onionSkinSettings, currentFrame, totalFrames, showGrid, showGuides, selectionData, selectionTool, selectionMode]);
 
   const updateColorPanel = useCallback(() => {
     if (apiRef.current) {
@@ -577,7 +626,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "animationProps", "blendModes"];
+    const rightPanelIds = ["color", "animationProps", "blendModes", "effects"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {
@@ -614,6 +663,12 @@ function App() {
         component: "blendModes",
         title: "混合模式",
         position: { referencePanel: "canvas", direction: "right" },
+      });
+      api.addPanel({
+        id: "effects",
+        component: "effectsPanel",
+        title: "效果",
+        position: { referencePanel: "blendModes", direction: "below" },
       });
     }
   }, [currentWorkspace, brushColor, brushSize]);
@@ -761,6 +816,23 @@ function App() {
             {zoom}%
           </span>
           <Button small icon={<ZoomIn size={12} />} onClick={() => setZoom(z => Math.min(500, z + 10))} />
+        </ButtonGroup>
+
+        <ButtonGroup minimal style={{ marginLeft: 6 }}>
+          <Button
+            small
+            icon={<Grid3X3 size={12} />}
+            active={showGrid}
+            onClick={() => setShowGrid(g => !g)}
+            title="显示网格"
+          />
+          <Button
+            small
+            icon={<Ruler size={12} />}
+            active={showGuides}
+            onClick={() => setShowGuides(g => !g)}
+            title="显示参考线"
+          />
         </ButtonGroup>
 
         <span style={{ marginLeft: 12, fontSize: 11, color: "#8b949e" }}>
