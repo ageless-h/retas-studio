@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use retas_core::{Document, Layer, RasterLayer, RasterFrame};
 use retas_core::advanced::undo::UndoManager;
+use retas_core::advanced::render_queue::RenderQueue;
 
 /// Unified editor state behind a single Mutex.
 /// Eliminates the 3-Mutex deadlock class (Issue #17).
 pub struct EditorState {
     pub document: Document,
     pub undo_manager: UndoManager,
+    pub render_queue: RenderQueue,
 }
 
 impl EditorState {
@@ -47,6 +49,7 @@ impl EditorState {
         Self {
             document: doc,
             undo_manager: UndoManager::new(),
+            render_queue: RenderQueue::new(),
         }
     }
 }

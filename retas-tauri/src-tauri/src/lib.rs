@@ -11,6 +11,7 @@ use retas_core::advanced::undo::{UndoManager, Command, LayerAddCommand, LayerDel
 use retas_core::advanced::brush::{BrushEngine, BrushSettings, BrushPoint, BrushType, BrushBlendMode};
 use retas_core::advanced::effect_processor::EffectProcessor;
 use retas_core::advanced::effects::{Effect, EffectType};
+use retas_core::advanced::render_queue::{RenderJob, RenderFormat, RenderQuality, RenderStatus};
 use retas_io::export::{ImageExporter, ImageExportOptions, ImageFormat};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1814,6 +1815,195 @@ fn rotate_layer_90(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RenderJobInfo {
+    pub id: u64,
+    pub name: String,
+    pub frame_range: (u32, u32),
+    pub format: String,
+    pub quality: String,
+    pub status: String,
+    pub progress: f64,
+}
+
+fn job_to_info(job: &RenderJob) -> RenderJobInfo {
+    RenderJobInfo {
+        id: job.id,
+        name: job.name.clone(),
+        frame_range: job.frame_range,
+        format: format!("{:?}", job.format),
+        quality: format!("{:?}", job.quality),
+        status: match &job.status {
+            RenderStatus::Queued => "queued".to_string(),
+            RenderStatus::Rendering => "rendering".to_string(),
+            RenderStatus::Completed => "completed".to_string(),
+            RenderStatus::Failed(msg) => format!("failed: {}", msg),
+            RenderStatus::Cancelled => "cancelled".to_string(),
+        },
+        progress: job.progress,
+    }
+}
+
+#[tauri::command]
+fn add_render_job(
+    name: String,
+    start_frame: u32,
+    end_frame: u32,
+    output_dir: String,
+    format: String,
+    quality: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<RenderJobInfo, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    
+    let fmt = match format.as_str() {
+        "png" => RenderFormat::Png,
+        "jpeg" | "jpg" => RenderFormat::Jpeg,
+        "gif" => RenderFormat::Gif,
+        "mp4" => RenderFormat::Mp4,
+        "webm" => RenderFormat::WebM,
+        "apng" => RenderFormat::APNG,
+        _ => RenderFormat::Png,
+    };
+    
+    let job_id = editor.render_queue.add_batch_export(
+        name,
+        "current".to_string(),
+        (start_frame, end_frame),
+        std::path::PathBuf::from(&output_dir),
+        fmt,
+    );
+    
+    let job = editor.render_queue.get_job(job_id).ok_or("Job not found")?;
+    Ok(job_to_info(job))
+}
+
+#[tauri::command]
+fn get_render_jobs(state: State<'_, Arc<AppState>>) -> Result<Vec<RenderJobInfo>, String> {
+    let editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let mut jobs: Vec<RenderJobInfo> = editor.render_queue.jobs.iter().map(job_to_info).collect();
+    jobs.extend(editor.render_queue.completed_jobs.iter().map(job_to_info));
+    Ok(jobs)
+}
+
+#[tauri::command]
+fn cancel_render_job(job_id: u64, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    Ok(editor.render_queue.cancel_job(job_id))
+}
+
+#[tauri::command]
+fn clear_completed_jobs(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    editor.render_queue.clear_completed();
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_frame(
+    layer_id: String,
+    frame: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "清除帧");
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support clear".to_string()),
+    };
+    
+    if let Some(frame_data) = raster.frames.get_mut(&frame) {
+        let size = (frame_data.width * frame_data.height * 4) as usize;
+        frame_data.image_data = Arc::new(vec![0u8; size]);
+    }
+    
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn fill_frame(
+    layer_id: String,
+    frame: u32,
+    color: (u8, u8, u8, u8),
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "填充帧");
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support fill".to_string()),
+    };
+    
+    if let Some(frame_data) = raster.frames.get_mut(&frame) {
+        let pixel_count = (frame_data.width * frame_data.height) as usize;
+        let mut pixels = vec![0u8; pixel_count * 4];
+        for i in 0..pixel_count {
+            pixels[i * 4] = color.0;
+            pixels[i * 4 + 1] = color.1;
+            pixels[i * 4 + 2] = color.2;
+            pixels[i * 4 + 3] = color.3;
+        }
+        frame_data.image_data = Arc::new(pixels);
+    }
+    
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(())
+}
+
+#[tauri::command]
+fn color_replace(
+    layer_id: String,
+    frame: u32,
+    source_color: (u8, u8, u8),
+    target_color: (u8, u8, u8),
+    tolerance: u8,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u32, String> {
+    let lid = parse_layer_id(&layer_id)?;
+    let mut editor = state.editor.lock().map_err(|e| e.to_string())?;
+    let snap = snapshot_before(&editor.document, "颜色替换");
+    
+    let layer = editor.document.layers.get_mut(&lid).ok_or("Layer not found")?;
+    let raster = match layer {
+        RetasLayer::Raster(r) => r,
+        _ => return Err("Only raster layers support color replace".to_string()),
+    };
+    
+    let frame_data = raster.frames.get_mut(&frame).ok_or("No frame data")?;
+    let mut pixels = frame_data.image_data.as_ref().clone();
+    let pixel_count = (frame_data.width * frame_data.height) as usize;
+    let mut replaced = 0u32;
+    
+    for i in 0..pixel_count {
+        let idx = i * 4;
+        let r = pixels[idx];
+        let g = pixels[idx + 1];
+        let b = pixels[idx + 2];
+        
+        let dr = (r as i32 - source_color.0 as i32).unsigned_abs() as u8;
+        let dg = (g as i32 - source_color.1 as i32).unsigned_abs() as u8;
+        let db = (b as i32 - source_color.2 as i32).unsigned_abs() as u8;
+        
+        if dr <= tolerance && dg <= tolerance && db <= tolerance && pixels[idx + 3] > 0 {
+            pixels[idx] = target_color.0;
+            pixels[idx + 1] = target_color.1;
+            pixels[idx + 2] = target_color.2;
+            replaced += 1;
+        }
+    }
+    
+    frame_data.image_data = Arc::new(pixels);
+    push_snapshot(&mut editor.undo_manager, snap, &mut editor.document);
+    Ok(replaced)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState::new());
@@ -1875,6 +2065,13 @@ pub fn run() {
             move_layer_pixels,
             flip_layer,
             rotate_layer_90,
+            add_render_job,
+            get_render_jobs,
+            cancel_render_job,
+            clear_completed_jobs,
+            clear_frame,
+            fill_frame,
+            color_replace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

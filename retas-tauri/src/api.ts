@@ -442,3 +442,57 @@ export async function rotateLayer90(layerId: string, clockwise: boolean): Promis
   return safeInvoke("rotate_layer_90", { layerId, clockwise });
 }
 
+export interface RenderJobInfo {
+  id: number;
+  name: string;
+  frame_range: [number, number];
+  format: string;
+  quality: string;
+  status: string;
+  progress: number;
+}
+
+export async function addRenderJob(
+  name: string, startFrame: number, endFrame: number,
+  outputDir: string, format: string, quality: string
+): Promise<RenderJobInfo> {
+  if (!isTauri) {
+    return { id: 1, name, frame_range: [startFrame, endFrame], format, quality, status: "queued", progress: 0 };
+  }
+  return safeInvoke("add_render_job", { name, startFrame, endFrame, outputDir, format, quality });
+}
+
+export async function getRenderJobs(): Promise<RenderJobInfo[]> {
+  if (!isTauri) return [];
+  return safeInvoke("get_render_jobs", {});
+}
+
+export async function cancelRenderJob(jobId: number): Promise<boolean> {
+  if (!isTauri) return false;
+  return safeInvoke("cancel_render_job", { jobId });
+}
+
+export async function clearCompletedJobs(): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("clear_completed_jobs", {});
+}
+
+export async function clearFrame(layerId: string, frame: number): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("clear_frame", { layerId, frame });
+}
+
+export async function fillFrame(layerId: string, frame: number, color: [number, number, number, number]): Promise<void> {
+  if (!isTauri) return;
+  return safeInvoke("fill_frame", { layerId, frame, color });
+}
+
+export async function colorReplace(
+  layerId: string, frame: number,
+  sourceColor: [number, number, number], targetColor: [number, number, number],
+  tolerance: number
+): Promise<number> {
+  if (!isTauri) return 0;
+  return safeInvoke("color_replace", { layerId, frame, sourceColor, targetColor, tolerance });
+}
+

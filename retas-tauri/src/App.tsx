@@ -33,6 +33,7 @@ import { OnionSkinPanel, OnionSkinSettings } from "./components/OnionSkinPanel";
 import SelectionToolPanel, { SelectionData } from "./components/SelectionToolPanel";
 import XSheetPanel from "./components/XSheetPanel";
 import EffectsPanel from "./components/EffectsPanel";
+import RenderQueuePanel from "./components/RenderQueuePanel";
 
 type Tool = "brush" | "eraser" | "pen" | "fill" | "select" | "move" | "zoom" | "hand" | "eyedropper";
 
@@ -350,6 +351,7 @@ const components = {
   animationProps: AnimationPropsPanel,
   blendModes: BlendModesPanel,
   effectsPanel: EffectsPanel,
+  renderQueue: RenderQueuePanel,
   xsheet: XSheetWrapper,
 };
 
@@ -576,6 +578,12 @@ function App() {
         title: "效果",
         position: { referencePanel: "blendModes", direction: "below" },
       });
+      api.addPanel({
+        id: "renderQueue",
+        component: "renderQueue",
+        title: "渲染队列",
+        position: { referencePanel: "effects", direction: "below" },
+      });
     }
   }, [currentTool, zoom, brushColor, brushSize, currentWorkspace, isPlaying, currentFrame, totalFrames, fps, onionSkinSettings, selectionData, selectionTool, selectionMode]);
 
@@ -635,7 +643,7 @@ function App() {
     if (!apiRef.current) return;
     const api = apiRef.current;
 
-    const rightPanelIds = ["color", "animationProps", "blendModes", "effects"];
+    const rightPanelIds = ["color", "animationProps", "blendModes", "effects", "renderQueue"];
     rightPanelIds.forEach(id => {
       const panel = api.getPanel(id);
       if (panel) {
